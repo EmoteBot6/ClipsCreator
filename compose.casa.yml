@@ -43,9 +43,9 @@ services:
     ports:
       - "5000:5000"                    # nur intern
     volumes:
-      - /DATA/AppData/leagueclips/backend-data:/data
-      - /DATA/AppData/leagueclips/backend-screens:/screens
-      - /DATA/AppData/leagueclips/backend-videos:/videos
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-data:/data
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-screens:/screens
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-videos:/videos
     read_only: true
     tmpfs:
       - /tmp
@@ -88,9 +88,9 @@ services:
       HF_HOME: /data/.cache/huggingface
       TRANSFORMERS_CACHE: /data/.cache/huggingface
     volumes:
-      - /DATA/AppData/leagueclips/backend-data:/data
-      - /DATA/AppData/leagueclips/backend-screens:/screens
-      - /DATA/AppData/leagueclips/backend-videos:/videos
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-data:/data
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-screens:/screens
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/backend-videos:/videos
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -140,7 +140,7 @@ services:
     command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
     # Optional: "--requirepass", "STRONG_PASSWORD" falls extern zugänglich (besser: intern ohne Publish)
     volumes:
-      - /DATA/AppData/leagueclips/redis:/data
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/redis:/data
     expose:
       - "6379"
     healthcheck:
@@ -160,7 +160,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /DATA/AppData/leagueclips/ollama:/root/.ollama
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/ollama:/root/.ollama
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     logging:

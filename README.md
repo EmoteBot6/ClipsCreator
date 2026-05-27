@@ -51,7 +51,7 @@ Common values to change:
 - `LEAGUECLIPS_AI_DEVICE`: `cpu` or a supported accelerator setup.
 - `OLLAMA_HOST_PORT`: host port for the Ollama service.
 
-For server/CasaOS-style installs, `compose.casa.yml` uses `/DATA/AppData/leagueclips/...` paths and supports `LEAGUECLIPS_SOURCE_DIR` for pointing builds at a local clone.
+For server/CasaOS-style installs, `compose.casa.yml` defaults runtime data to `/DATA/AppData/ClipsCreator/...` and supports `LEAGUECLIPS_SOURCE_DIR` for pointing builds at a local clone. You can override the data root with `CLIPSCREATOR_APPDATA_DIR`.
 
 ## Public Repo Hygiene
 
