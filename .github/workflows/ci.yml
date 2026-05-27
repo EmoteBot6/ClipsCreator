@@ -1,37 +1,41 @@
 name: ci
+
 on:
   push:
     branches: [main]
-    tags: ['v*.*.*']
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   docker:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     strategy:
       matrix:
         include:
           - service: backend
             context: ./backend
             file: ./backend/Dockerfile
-            image: ghcr.io/${{ github.repository }}-backend
+            image: ghcr.io/emotebot6/clipscreator-backend
           - service: frontend
             context: ./frontend
             file: ./frontend/Dockerfile
-            image: ghcr.io/${{ github.repository }}-frontend
+            image: ghcr.io/emotebot6/clipscreator-frontend
           - service: frontend_sitcom
             context: ./frontend_sitcom
             file: ./frontend_sitcom/Dockerfile
-            image: ghcr.io/${{ github.repository }}-frontend-sitcom
+            image: ghcr.io/emotebot6/clipscreator-frontend-sitcom
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3  # Buildx für Multi-Arch
-        # optional: docker/setup-qemu-action@v3, wenn nötig
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
 
       - id: meta
         uses: docker/metadata-action@v5
@@ -44,6 +48,7 @@ jobs:
             type=sha,format=short
 
       - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -52,8 +57,8 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          file: ${{ matrix.file }}             # <- Dockerfile-Pfad je Service
-          platforms: linux/amd64,linux/arm64   # falls du nur amd64 brauchst, auf amd64 reduzieren
-          push: true
-          tags: ${{ steps.meta.outputs.tags }} # Tags je Service
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
