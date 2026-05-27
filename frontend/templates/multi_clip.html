@@ -1,0 +1,1221 @@
+{% extends "base.html" %}
+
+{% block title %}League Clips Generator{% endblock %}
+
+{% block extra_styles %}
+  #latestVideo {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 16px;
+  }
+
+  #latestVideo img {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+
+  #latestVideo > div {
+    min-width: 0;
+  }
+
+  #autoSynapseStatus {
+    display: grid;
+    gap: 10px;
+  }
+
+  .watcher-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+  }
+
+  .watcher-stat {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .watcher-stat strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .clip-wrapper {
+    display: flex;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 12px;
+    background: rgba(255, 255, 255, 0.76);
+  }
+
+  .clip-left, .clip-right {
+    flex: 1;
+  }
+
+  .clip-right {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .clip-right video {
+    width: min(320px, 100%);
+    max-height: 220px;
+    border-radius: 10px;
+  }
+
+  .progress-bg {
+    width: 100%;
+    height: 14px;
+    background: #dbe4f0;
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 6px 0;
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    transition: width 0.3s ease;
+  }
+
+  #existingClipsContainer {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+
+  .clip-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    background: var(--card-strong);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .clip-card video,
+  .clip-primary-media video {
+    width: 100%;
+    border-radius: 10px;
+    background: #000;
+  }
+
+  .clip-primary-media {
+    min-height: 190px;
+    display: grid;
+    place-items: center;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    background:
+      linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(21, 128, 61, 0.08)),
+      #f8fbff;
+    overflow: hidden;
+  }
+
+  .clip-placeholder {
+    max-width: 260px;
+    padding: 18px;
+    text-align: center;
+  }
+
+  .ai-panel {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .clip-options {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .clip-card-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ai-overlay-title {
+    width: 100%;
+  }
+
+  #sourceVideoSelect {
+    min-width: min(320px, 100%);
+  }
+
+  @media (max-width: 820px) {
+    #latestVideo {
+      grid-template-columns: 1fr;
+    }
+
+    .clip-wrapper {
+      flex-direction: column;
+    }
+  }
+{% endblock %}
+
+{% block content %}
+  <section class="card hero-card">
+    <h2 class="page-title">Multi Clip Split</h2>
+    <p class="muted">Upload a long source video, split it into highlight chunks, then optionally AI-process each finished clip.</p>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Latest Synapse Video</h2>
+        <p class="muted section-copy">Use the newest Synapse upload as a source, or keep working from your saved uploads.</p>
+      </div>
+    </div>
+    <div id="latestVideo" class="muted">Loading latest video...</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Auto Synapse Watcher</h2>
+        <p class="muted section-copy">Checks the Synapse feed on a timer, downloads unseen uploads, and starts the split job automatically.</p>
+      </div>
+      <div class="toolbar">
+        <button id="stopAutoSynapseButton" class="button button-danger" type="button" disabled>Stop Task</button>
+        <button id="checkAutoSynapseButton" class="button button-primary" type="button">Check Now</button>
+      </div>
+    </div>
+    <div id="autoSynapseStatus" class="muted">Loading watcher status...</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Source Video</h2>
+        <p class="muted section-copy">Upload once, reuse previous source videos, and optionally pass the YouTube URL for timestamp-aware splitting.</p>
+      </div>
+    </div>
+    <div class="form-stack">
+      <div class="form-row">
+        <input id="sourceVideoInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm" />
+        <button id="uploadButton" class="button button-primary">Upload Source</button>
+      </div>
+      <div class="form-row">
+        <select id="sourceVideoSelect"></select>
+        <button id="refreshSourcesButton" class="button button-primary">Refresh</button>
+        <button id="selectSourceButton" class="button button-primary">Use Selected</button>
+        <button id="startButton" class="button button-success" disabled>Start Split</button>
+        <button id="stopButton" class="button button-danger" disabled>Stop</button>
+      </div>
+      <div class="form-row">
+        <input
+          id="sourceVideoUrlInput"
+          class="input-wide"
+          type="text"
+          placeholder="Optional: https://www.youtube.com/watch?v=... (for description timestamps)"
+        />
+        <button
+          type="button"
+          class="button button-primary"
+          onclick="window.open('https://app.ytdown.to/en10/', '_blank', 'noopener,noreferrer')"
+        >Downloader</button>
+      </div>
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input id="autoSubtitlesCheckbox" type="checkbox" />
+          <span>Auto subtitles after split</span>
+        </label>
+        <span class="muted">Runs the AI subtitle pass on each finished split clip automatically.</span>
+      </div>
+    </div>
+    <p id="statusText" class="status-line"><strong>Status:</strong> Idle</p>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Current Processing</h2>
+        <p class="muted section-copy">Progress for the active split or AI subtitle pass appears here.</p>
+      </div>
+    </div>
+    <div id="clipProgressContainer"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Existing Clips</h2>
+        <p class="muted section-copy">Only final subtitled clips are previewed; original split files stay available as downloads.</p>
+      </div>
+      <button id="deleteAllClipsButton" class="button button-danger">Delete All Clips</button>
+    </div>
+    <div id="existingClipsContainer"></div>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    let pollInterval = null;
+    let pollErrorCount = 0;
+    const aiPollers = new Map();
+    let latestSynapseUrl = "";
+    let latestAutoSynapseStatus = {};
+
+    function setStatus(message) {
+      document.getElementById("statusText").innerHTML = `<strong>Status:</strong> ${message}`;
+    }
+
+    function setStartEnabled(enabled) {
+      document.getElementById("startButton").disabled = !enabled;
+    }
+
+    function setStopEnabled(enabled) {
+      document.getElementById("stopButton").disabled = !enabled;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes || bytes <= 0) return "0 MB";
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function formatUtc(value) {
+      if (!value) return "Never";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        return value;
+      }
+      return parsed.toLocaleString();
+    }
+
+    function readJsonResponse(res) {
+      return res.text().then((text) => {
+        let data = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (err) {
+            throw new Error(`Server returned invalid JSON (${res.status})`);
+          }
+        }
+        if (!res.ok) {
+          throw new Error(data.error || data.status || data.details || `Request failed (${res.status})`);
+        }
+        return data;
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    function renderAutoSynapseStatus(data) {
+      const container = document.getElementById("autoSynapseStatus");
+      const button = document.getElementById("checkAutoSynapseButton");
+      const stopButton = document.getElementById("stopAutoSynapseButton");
+      if (!container || !button || !stopButton) {
+        return;
+      }
+
+      if (!data || typeof data !== "object") {
+        container.innerHTML = "<p class='muted'>Watcher status is unavailable right now.</p>";
+        button.disabled = false;
+        stopButton.disabled = true;
+        return;
+      }
+
+      latestAutoSynapseStatus = data;
+      button.disabled = !data.enabled;
+      const processedIds = Array.isArray(data.processed_video_ids) ? data.processed_video_ids : [];
+      const failedIds = Array.isArray(data.failed_video_ids) ? data.failed_video_ids : [];
+      const activeTask = data.active_task_id || "";
+      const activeTaskSnapshot = data.active_task && typeof data.active_task === "object" ? data.active_task : {};
+      const activeTaskProgress = activeTaskSnapshot.progress && typeof activeTaskSnapshot.progress === "object"
+        ? activeTaskSnapshot.progress
+        : {};
+      const activeTaskMessage = activeTaskProgress.message || "";
+      const activeTaskFrame = Number(activeTaskProgress.frame || 0);
+      const activeTaskTotal = Number(activeTaskProgress.total || 0);
+      const activeTaskPercent = activeTaskTotal > 0 ? Math.floor((activeTaskFrame / activeTaskTotal) * 100) : null;
+      const activeTaskState = String(data.active_task_state || activeTaskSnapshot.state || "").toUpperCase();
+      const taskIsTerminal = ["SUCCESS", "FAILURE", "REVOKED"].includes(activeTaskState);
+      const watcherState = String(data.state || "").toLowerCase();
+      const canStopWatcher = (activeTask && !taskIsTerminal) || ["downloading", "processing", "stopping", "download_failed", "error"].includes(watcherState);
+      stopButton.disabled = !canStopWatcher;
+      const downloadProgress = data.download_progress && typeof data.download_progress === "object" ? data.download_progress : {};
+      const downloadPercent = Number(downloadProgress.percent || 0);
+      const activeTaskLabel = activeTask
+        ? `${activeTask}${data.active_task_state ? ` (${data.active_task_state})` : ""}`
+        : "None";
+
+      container.innerHTML = `
+        <div class="watcher-grid">
+          <div class="watcher-stat">
+            <strong>State</strong>
+            <span>${escapeHtml(data.state || (data.enabled ? "idle" : "disabled"))}</span>
+          </div>
+          <div class="watcher-stat">
+            <strong>Polling</strong>
+            <span>Every ${Math.round(Number(data.poll_seconds || 0) / 60) || 0} min</span>
+          </div>
+          <div class="watcher-stat">
+            <strong>Active Task</strong>
+            <span>${escapeHtml(activeTaskLabel)}</span>
+          </div>
+          <div class="watcher-stat">
+            <strong>Processed Videos</strong>
+            <span>${processedIds.length}</span>
+          </div>
+          <div class="watcher-stat">
+            <strong>Skipped Failures</strong>
+            <span>${failedIds.length}</span>
+          </div>
+        </div>
+        <p class="muted"><strong>Auto subtitles:</strong> ${data.auto_subtitles ? "On" : "Off"}</p>
+        <p class="wrap-title"><strong>Latest seen:</strong> ${escapeHtml(data.latest_title || "No feed data yet.")}</p>
+        <p class="wrap-title"><strong>Working on:</strong> ${escapeHtml(data.active_title || "No auto-run in progress.")}</p>
+        <p class="wrap-title"><strong>Last processed:</strong> ${escapeHtml(data.last_processed_title || "Nothing processed automatically yet.")}</p>
+        ${activeTaskMessage ? `<p class="muted"><strong>Task progress:</strong> ${escapeHtml(activeTaskMessage)}${activeTaskPercent !== null ? ` (${activeTaskPercent}%)` : ""}</p>` : ""}
+        ${downloadProgress.message ? `<p class="muted"><strong>Download:</strong> ${escapeHtml(downloadProgress.message)}${downloadPercent ? ` (${downloadPercent}%)` : ""}</p>` : ""}
+        <p class="muted"><strong>Active since:</strong> ${formatUtc(data.active_started_at_utc)}</p>
+        <p class="muted"><strong>Last feed check:</strong> ${formatUtc(data.last_feed_checked_at_utc || data.last_checked_at_utc)}</p>
+        <p class="muted"><strong>Last processed at:</strong> ${formatUtc(data.last_processed_at_utc)}</p>
+        ${data.last_error ? `<p class="muted"><strong>Last error:</strong> ${escapeHtml(data.last_error)}</p>` : ""}
+        <p class="muted"><a href="/auto-synapse/diagnostics" target="_blank" rel="noopener">Open watcher diagnostics JSON</a></p>
+        ${!data.enabled ? `<p class="muted">Automatic checking is disabled. Enable it with \`LEAGUECLIPS_AUTO_SYNAPSE_ENABLED=true\` in docker-compose.</p>` : ""}
+      `;
+    }
+
+    function loadAutoSynapseStatus() {
+      fetch("/auto-synapse/status")
+        .then(readJsonResponse)
+        .then((data) => {
+          renderAutoSynapseStatus(data);
+        })
+        .catch((err) => {
+          document.getElementById("autoSynapseStatus").innerHTML = `<p class='muted'>Could not load watcher status: ${err}</p>`;
+        });
+    }
+
+    function requestAutoSynapseCheck() {
+      const button = document.getElementById("checkAutoSynapseButton");
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = "Checking...";
+
+      fetch("/auto-synapse/check", { method: "POST" })
+        .then(readJsonResponse)
+        .then((data) => {
+          if (data.status === "disabled") {
+            setStatus("Auto Synapse watcher is disabled in the backend config.");
+          } else {
+            setStatus("Auto Synapse check queued.");
+          }
+          renderAutoSynapseStatus(data.watcher || {});
+          setTimeout(loadAutoSynapseStatus, 1500);
+        })
+        .catch((err) => {
+          setStatus(`Could not queue auto Synapse check: ${err}`);
+        })
+        .finally(() => {
+          button.textContent = originalText;
+          loadAutoSynapseStatus();
+        });
+    }
+
+    function stopAutoSynapseTask() {
+      const stopButton = document.getElementById("stopAutoSynapseButton");
+      const activeTaskId = String(latestAutoSynapseStatus.active_task_id || "").trim();
+      const watcherState = String(latestAutoSynapseStatus.state || "").toLowerCase();
+      const canRequestStop = activeTaskId || ["downloading", "processing", "stopping", "download_failed", "error"].includes(watcherState);
+      if (!canRequestStop) {
+        setStatus("No active Auto Synapse task to stop.");
+        loadAutoSynapseStatus();
+        return;
+      }
+
+      const originalText = stopButton.textContent;
+      stopButton.disabled = true;
+      stopButton.textContent = "Stopping...";
+      setStatus("Stopping Auto Synapse task...");
+
+      fetch("/auto-synapse/stop", { method: "POST" })
+        .then(readJsonResponse)
+        .then((data) => {
+          renderAutoSynapseStatus(data.watcher || {});
+          if (data.status === "stopped") {
+            setStatus("Auto Synapse task stopped.");
+          } else if (data.status === "stopping") {
+            setStatus("Auto Synapse stop requested. The current download may need a moment to unwind.");
+          } else if (data.status === "idle") {
+            setStatus("No active Auto Synapse task was running.");
+          } else {
+            setStatus(`Auto Synapse stop status: ${data.status || "unknown"}`);
+          }
+        })
+        .catch((err) => {
+          setStatus(`Could not stop auto Synapse task: ${err}`);
+        })
+        .finally(() => {
+          stopButton.textContent = originalText;
+          loadAutoSynapseStatus();
+        });
+    }
+
+    function extractYoutubeId(text) {
+      if (!text) return "";
+      const trimmed = String(text).trim();
+      const directMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+      if (directMatch) return directMatch[1];
+      const filenameTokenMatch = trimmed.match(/(?:^|[_\s.])([A-Za-z0-9_-]{11})(?:[_\s.]|$)/);
+      return filenameTokenMatch ? filenameTokenMatch[1] : "";
+    }
+
+    function updateSourceUrlFromSelectedFilename() {
+      const input = document.getElementById("sourceVideoUrlInput");
+      if (!input || input.value.trim()) {
+        return;
+      }
+      const selected = document.getElementById("sourceVideoSelect").value;
+      const videoId = extractYoutubeId(selected);
+      if (videoId) {
+        input.value = `https://www.youtube.com/watch?v=${videoId}`;
+      }
+    }
+
+    function updateSourceUrlFromLatestVideo() {
+      const input = document.getElementById("sourceVideoUrlInput");
+      if (!input || !latestSynapseUrl) {
+        return;
+      }
+      input.value = latestSynapseUrl;
+    }
+
+    function setLatestDownloadButtonState(isBusy) {
+      const button = document.getElementById("downloadLatestSourceButton");
+      if (!button) {
+        return;
+      }
+      button.disabled = !!isBusy;
+      button.textContent = isBusy ? "Downloading..." : "Download As Source Video";
+    }
+
+    function startSplitProcess(sourceUrl, sourceFilename, autoSubtitles = false) {
+      setStatus("Starting split process...");
+      fetch("/start-process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_url: sourceUrl || "",
+          source_filename: sourceFilename || "",
+          auto_subtitles: !!autoSubtitles
+        })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          const taskId = data.task_id;
+          if (!taskId) {
+            setStatus("Could not start process.");
+            return;
+          }
+          localStorage.setItem("activeTaskId", taskId);
+          setStopEnabled(true);
+          if (autoSubtitles) {
+            setStatus(`Task started with auto subtitles: ${taskId}`);
+          } else {
+            setStatus(`Task started: ${taskId}`);
+          }
+          startPolling(taskId);
+        })
+        .catch((err) => setStatus(`Error starting process: ${err}`));
+    }
+
+    function downloadLatestSourceVideo() {
+      if (!latestSynapseUrl) {
+        setStatus("No latest YouTube URL is available right now.");
+        return;
+      }
+
+      setLatestDownloadButtonState(true);
+      setStatus("Downloading latest YouTube video into the source library...");
+
+      fetch("/source-videos/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: latestSynapseUrl })
+      })
+        .then(readJsonResponse)
+        .then((data) => {
+          const sourceUrl = data.source_url || latestSynapseUrl || "";
+          const sourceFilename = data.filename || "";
+          if (data.source_url) {
+            document.getElementById("sourceVideoUrlInput").value = data.source_url;
+          }
+          document.getElementById("autoSubtitlesCheckbox").checked = true;
+          localStorage.setItem("multiClipAutoSubtitles", "1");
+          localStorage.setItem("sourceVideoUploaded", "1");
+          setStartEnabled(true);
+          setStatus(`Downloaded ${data.filename} (${formatSize(data.size_bytes)}) and set it as the active source. Starting split process...`);
+          loadSourceVideos();
+          startSplitProcess(sourceUrl, sourceFilename, true);
+        })
+        .catch((err) => {
+          setStatus(`Download failed: ${err}. You can still upload the video manually.`);
+        })
+        .finally(() => {
+          setLatestDownloadButtonState(false);
+        });
+    }
+
+    function loadSourceVideos() {
+      fetch("/source-videos")
+        .then((res) => res.json())
+        .then((data) => {
+          const select = document.getElementById("sourceVideoSelect");
+          select.innerHTML = "";
+
+          const videos = data.videos || [];
+          if (videos.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No uploaded source videos";
+            select.appendChild(opt);
+            setStartEnabled(false);
+            localStorage.removeItem("sourceVideoUploaded");
+            return;
+          }
+
+          videos.forEach((video) => {
+            const opt = document.createElement("option");
+            opt.value = video.filename;
+            const activeTag = video.is_active ? " [active]" : "";
+            opt.textContent = `${video.filename} (${formatSize(video.size_bytes)})${activeTag}`;
+            if (video.is_active) {
+              opt.selected = true;
+            }
+            select.appendChild(opt);
+          });
+
+          const hasActive = videos.some((video) => video.is_active);
+          setStartEnabled(hasActive);
+          if (hasActive) {
+            localStorage.setItem("sourceVideoUploaded", "1");
+          } else {
+            localStorage.removeItem("sourceVideoUploaded");
+          }
+          updateSourceUrlFromSelectedFilename();
+        })
+        .catch((err) => {
+          setStatus(`Could not load source videos: ${err}`);
+        });
+    }
+
+    function loadLatestVideo() {
+      fetch("/latest-synapse-video")
+        .then((res) => res.json())
+        .then((data) => {
+          const container = document.getElementById("latestVideo");
+          if (data.error) {
+            container.innerHTML = `<p class="muted">Failed: ${data.error}</p>`;
+            return;
+          }
+          const thumbnailHtml = data.thumbnail
+            ? `<img src="${escapeAttr(data.thumbnail)}" alt="Latest Synapse video thumbnail" />`
+            : `<div class="muted">No thumbnail available</div>`;
+          latestSynapseUrl = data.url || "";
+          container.innerHTML = `
+            ${thumbnailHtml}
+            <div>
+              <h3 class="wrap-title">${escapeHtml(data.title || "Latest Synapse video")}</h3>
+              <p class="muted">Channel: ${escapeHtml(data.channel || "Synapse")}</p>
+              <div class="toolbar">
+                <a class="download-link" href="${escapeAttr(data.url || "#")}" target="_blank" rel="noopener noreferrer">Open YouTube Video</a>
+                <button id="downloadLatestSourceButton" class="button button-primary" type="button">Download As Source Video</button>
+              </div>
+            </div>
+          `;
+          setLatestDownloadButtonState(false);
+          updateSourceUrlFromLatestVideo();
+        })
+        .catch((err) => {
+          document.getElementById("latestVideo").innerHTML = `<p class="muted">Error: ${err}</p>`;
+        });
+    }
+
+    function originalUrlForClip(clip) {
+      if (clip.original_video_url) {
+        return clip.original_video_url;
+      }
+      return clip.subdir
+        ? `/videos/${clip.subdir}/${clip.filename}`
+        : `/videos/root/${clip.filename}`;
+    }
+
+    function finalVideoFromResult(result) {
+      const artifacts = result && typeof result === "object" && result.artifacts && typeof result.artifacts === "object"
+        ? result.artifacts
+        : {};
+      return artifacts.edited_video || "";
+    }
+
+    function finalDownloadLink(url) {
+      return url
+        ? `<a class="download-link" href="${escapeAttr(url)}" download>Download Final Clip</a>`
+        : "";
+    }
+
+    function renderPrimaryClipMedia(card, finalVideoUrl, title) {
+      const media = card.querySelector(".clip-primary-media");
+      if (!media) return;
+
+      if (finalVideoUrl) {
+        media.innerHTML = `<video controls src="${escapeAttr(finalVideoUrl)}" aria-label="${escapeAttr(title || "Final generated clip")}"></video>`;
+        return;
+      }
+
+      media.innerHTML = `
+        <div class="clip-placeholder">
+          <strong>Final clip pending</strong>
+          <p class="muted">The original split is ready to download, but it stays hidden until subtitles are generated.</p>
+        </div>
+      `;
+    }
+
+    function loadExistingClips() {
+      fetch("/existing-clips")
+        .then((res) => res.json())
+        .then((clips) => {
+          const container = document.getElementById("existingClipsContainer");
+          const deleteAllButton = document.getElementById("deleteAllClipsButton");
+          container.innerHTML = "";
+          if (!clips || clips.length === 0) {
+            if (deleteAllButton) deleteAllButton.disabled = true;
+            container.innerHTML = "<p class='muted'>No clips available yet.</p>";
+            return;
+          }
+          if (deleteAllButton) deleteAllButton.disabled = false;
+          clips.forEach((clip) => {
+            const card = document.createElement("div");
+            card.className = "clip-card";
+            const clipUrl = originalUrlForClip(clip);
+            const aiResult = clip.ai_result && typeof clip.ai_result === "object" ? clip.ai_result : null;
+            const finalVideoUrl = clip.final_video_url || finalVideoFromResult(aiResult);
+            const displayTitle = (aiResult && aiResult.title) || clip.filename || "Split clip";
+            const key = `${clip.subdir || "root"}-${clip.filename || "clip"}`.replace(/[^A-Za-z0-9_-]/g, "_");
+            card.innerHTML = `
+              <div class="clip-primary-media"></div>
+              <div>
+                <p class="wrap-title"><strong>${escapeHtml(displayTitle)}</strong></p>
+                <p class="muted">${finalVideoUrl ? "Showing the final generated clip with subtitles." : "No subtitled final clip yet."}</p>
+              </div>
+              <div class="clip-actions">
+                <a class="download-link secondary" href="${escapeAttr(clipUrl)}" download>Download Original Split</a>
+                <span class="final-download-slot">${finalDownloadLink(finalVideoUrl)}</span>
+              </div>
+              <div class="ai-panel">
+                <div class="clip-card-toolbar">
+                  <div class="toolbar">
+                    <button class="button button-primary ai-process-btn" data-subdir="${escapeAttr(clip.subdir || "")}" data-filename="${escapeAttr(clip.filename || "")}">${finalVideoUrl ? "Rebuild Final Clip" : "Generate Final Clip"}</button>
+                    <button class="button button-danger delete-clip-btn" data-subdir="${escapeAttr(clip.subdir || "")}" data-filename="${escapeAttr(clip.filename || "")}">Delete Video</button>
+                  </div>
+                  <div class="clip-options">
+                    <label class="checkbox-row">
+                      <input type="checkbox" class="ai-show-items" />
+                      <span>Show Items</span>
+                    </label>
+                    <label class="checkbox-row">
+                      <input type="checkbox" class="ai-vine-boom" />
+                      <span>Vine Boom</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <input
+                    type="text"
+                    class="ai-overlay-title"
+                    placeholder="Optional scoreline title (shown briefly at start)"
+                    maxlength="90"
+                  />
+                </div>
+                <p class="muted ai-status" id="ai-status-${key}">Not processed yet.</p>
+                <div class="ai-result"></div>
+              </div>
+            `;
+            container.appendChild(card);
+            renderPrimaryClipMedia(card, finalVideoUrl, displayTitle);
+
+            if (aiResult) {
+              const statusEl = card.querySelector(".ai-status");
+              if (statusEl) {
+                statusEl.textContent = "AI processing complete.";
+              }
+              renderAiResult(card, aiResult);
+            }
+          });
+        })
+        .catch((err) => {
+          document.getElementById("existingClipsContainer").innerHTML = `<p class='muted'>Error loading clips: ${err}</p>`;
+          const deleteAllButton = document.getElementById("deleteAllClipsButton");
+          if (deleteAllButton) deleteAllButton.disabled = true;
+        });
+    }
+
+    function renderAiResult(card, result) {
+      const resultContainer = card.querySelector(".ai-result");
+      if (!resultContainer || !result) return;
+
+      const artifacts = result.artifacts || {};
+      const editedVideo = artifacts.edited_video || "";
+      const subtitlesSrt = artifacts.subtitles_srt || "";
+      const subtitlesVtt = artifacts.subtitles_vtt || "";
+      const overlayTitle = result.overlay_title || "";
+      const warnings = (result.warnings || []).map((w) => `<li>${escapeHtml(w)}</li>`).join("");
+      renderPrimaryClipMedia(card, editedVideo, result.title || "Final generated clip");
+      const finalSlot = card.querySelector(".final-download-slot");
+      if (finalSlot) {
+        finalSlot.innerHTML = finalDownloadLink(editedVideo);
+      }
+      const processButton = card.querySelector(".ai-process-btn");
+      if (processButton && editedVideo) {
+        processButton.textContent = "Rebuild Final Clip";
+      }
+
+      resultContainer.innerHTML = `
+        <p class="wrap-title"><strong>${escapeHtml(result.title || "AI Title")}</strong></p>
+        <p class="muted">${escapeHtml(result.description || "")}</p>
+        ${overlayTitle ? `<p class="muted"><strong>Overlay title:</strong> ${escapeHtml(overlayTitle)}</p>` : ""}
+        ${editedVideo ? `<p class="muted">Final generated clip is displayed above.</p>` : `<p class="muted">AI finished, but no final video artifact was found.</p>`}
+        ${(subtitlesSrt || subtitlesVtt) ? `
+          <div class="links">
+            ${subtitlesSrt ? `<a class="download-link" href="${escapeAttr(subtitlesSrt)}" download>SRT</a>` : ""}
+            ${subtitlesVtt ? `<a class="download-link" href="${escapeAttr(subtitlesVtt)}" download>VTT</a>` : ""}
+          </div>
+        ` : ""}
+        ${warnings ? `<p class="muted"><strong>Warnings:</strong></p><ul class="muted">${warnings}</ul>` : ""}
+      `;
+    }
+
+    function stopAiPolling(taskId) {
+      if (aiPollers.has(taskId)) {
+        clearInterval(aiPollers.get(taskId));
+        aiPollers.delete(taskId);
+      }
+    }
+
+    function startAiPolling(taskId, card) {
+      stopAiPolling(taskId);
+      const poller = setInterval(() => {
+        fetch(`/clip-ai/status/${taskId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            const statusEl = card.querySelector(".ai-status");
+            if (!statusEl) {
+              stopAiPolling(taskId);
+              return;
+            }
+            if (data.state === "SUCCESS") {
+              statusEl.textContent = "AI processing complete.";
+              renderAiResult(card, data.result || {});
+              stopAiPolling(taskId);
+              return;
+            }
+            if (data.state === "FAILURE") {
+              const message = (data.error && data.error.message) || data.status || "Unknown error";
+              statusEl.textContent = `AI processing failed: ${message}`;
+              stopAiPolling(taskId);
+              return;
+            }
+            const progress = data.progress || {};
+            statusEl.textContent = progress.message || `AI state: ${data.state}`;
+          })
+          .catch((err) => {
+            const statusEl = card.querySelector(".ai-status");
+            if (statusEl) statusEl.textContent = `AI status error: ${err}`;
+            stopAiPolling(taskId);
+          });
+      }, 1800);
+      aiPollers.set(taskId, poller);
+    }
+
+    function checkTaskStatus(taskId) {
+      fetch(`/status/${taskId}`)
+        .then(readJsonResponse)
+        .then((data) => {
+          pollErrorCount = 0;
+          if (data.state === "RENDERING") {
+            const { clip, frame, total, index, message } = data.progress;
+            const percent = total > 0 ? Math.floor((frame / total) * 100) : 0;
+            const clipId = `clip-${index}`;
+
+            let wrapper = document.getElementById(clipId);
+            if (!wrapper) {
+              wrapper = document.createElement("div");
+              wrapper.id = clipId;
+              wrapper.className = "clip-wrapper";
+              wrapper.innerHTML = `
+                <div class="clip-left">
+                  <p><strong>${clip}</strong></p>
+                  <div class="progress-bg"><div id="bar-${index}" class="progress-fill"></div></div>
+                  <p id="percent-${index}">0%</p>
+                  <p id="text-${index}" class="muted">Rendering...</p>
+                </div>
+                <div class="clip-right" id="right-${index}"></div>
+              `;
+              document.getElementById("clipProgressContainer").appendChild(wrapper);
+            }
+
+            document.getElementById(`bar-${index}`).style.width = `${percent}%`;
+            document.getElementById(`percent-${index}`).textContent = `${percent}%`;
+            document.getElementById(`text-${index}`).textContent = message || `Rendering ${clip}`;
+            setStatus(`Rendering ${clip} (${percent}%)`);
+            return;
+          }
+
+          if (data.state === "PROGRESS") {
+            const { index } = data.progress;
+            const prevIndex = index - 1;
+            if (prevIndex >= 0) {
+              const filename = `clip_${prevIndex}.mp4`;
+              const url = `/videos/${prevIndex}/${filename}`;
+              const previewContainer = document.getElementById(`right-${prevIndex}`);
+              if (previewContainer && !document.getElementById(`download-original-${prevIndex}`)) {
+                const dl = document.createElement("a");
+                dl.className = "download-link secondary";
+                dl.id = `download-original-${prevIndex}`;
+                dl.href = url;
+                dl.download = "";
+                dl.textContent = "Download Original Split";
+                previewContainer.appendChild(dl);
+
+                const textEl = document.getElementById(`text-${prevIndex}`);
+                if (textEl) textEl.textContent = "Original split ready. Final subtitled clip will appear below after AI processing.";
+              }
+            }
+            return;
+          }
+
+          if (data.state === "SUCCESS") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            if (data.result && data.result.status === "aborted") {
+              setStatus("Process stopped.");
+            } else if (data.result && data.result.auto_subtitles) {
+              setStatus(`All clips rendered and subtitled (${data.result.auto_subtitle_succeeded || 0} clips).`);
+            } else {
+              setStatus("All clips rendered.");
+            }
+            loadExistingClips();
+            return;
+          }
+
+          if (data.state === "FAILURE") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            const message = (data.error && data.error.message) || data.status || "Unknown error";
+            setStatus(`Failed: ${message}`);
+            return;
+          }
+
+          if (data.state === "REVOKED") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            setStatus("Process stopped.");
+            loadExistingClips();
+            return;
+          }
+
+          const progress = data.progress || {};
+          setStatus(progress.message || data.state || "Waiting...");
+        })
+        .catch((err) => {
+          pollErrorCount += 1;
+          if (pollErrorCount >= 3) {
+            clearInterval(pollInterval);
+            setStatus(`Status polling stopped after repeated errors: ${err}`);
+            return;
+          }
+          setStatus(`Status fetch error, retrying (${pollErrorCount}/3): ${err}`);
+        });
+    }
+
+    function startPolling(taskId) {
+      clearInterval(pollInterval);
+      pollErrorCount = 0;
+      checkTaskStatus(taskId);
+      pollInterval = setInterval(() => checkTaskStatus(taskId), 2000);
+    }
+
+    document.getElementById("uploadButton").addEventListener("click", () => {
+      const fileInput = document.getElementById("sourceVideoInput");
+      if (!fileInput.files || fileInput.files.length === 0) {
+        setStatus("Select a source video file first.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("source_video", fileInput.files[0]);
+      setStatus("Uploading source video...");
+
+      fetch("/upload-source-video", {
+        method: "POST",
+        body: formData
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            setStatus(`Upload failed: ${data.error}`);
+            setStartEnabled(false);
+            return;
+          }
+          setStartEnabled(true);
+          localStorage.setItem("sourceVideoUploaded", "1");
+          setStatus(`Uploaded ${data.filename} (${formatSize(data.size_bytes)})`);
+          loadSourceVideos();
+        })
+        .catch((err) => {
+          setStatus(`Upload error: ${err}`);
+          setStartEnabled(false);
+        });
+    });
+
+    document.getElementById("refreshSourcesButton").addEventListener("click", () => {
+      loadSourceVideos();
+      setStatus("Source video list refreshed.");
+    });
+
+    document.getElementById("selectSourceButton").addEventListener("click", () => {
+      const selected = document.getElementById("sourceVideoSelect").value;
+      if (!selected) {
+        setStatus("Select a source video first.");
+        return;
+      }
+
+      fetch("/source-videos/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selected })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            setStatus(`Could not select source: ${data.error}`);
+            setStartEnabled(false);
+            return;
+          }
+          if (!document.getElementById("sourceVideoUrlInput").value.trim()) {
+            const videoId = extractYoutubeId(data.active || selected);
+            if (videoId) {
+              document.getElementById("sourceVideoUrlInput").value = `https://www.youtube.com/watch?v=${videoId}`;
+            }
+          }
+          localStorage.setItem("sourceVideoUploaded", "1");
+          setStartEnabled(true);
+          setStatus(`Active source set to: ${data.active}`);
+          loadSourceVideos();
+        })
+        .catch((err) => {
+          setStatus(`Source selection failed: ${err}`);
+          setStartEnabled(false);
+        });
+    });
+
+    document.getElementById("startButton").addEventListener("click", () => {
+      const sourceUrl = document.getElementById("sourceVideoUrlInput").value.trim();
+      const sourceFilename = document.getElementById("sourceVideoSelect").value || "";
+      const autoSubtitles = !!document.getElementById("autoSubtitlesCheckbox").checked;
+      startSplitProcess(sourceUrl, sourceFilename, autoSubtitles);
+    });
+
+    document.getElementById("sourceVideoSelect").addEventListener("change", () => {
+      updateSourceUrlFromSelectedFilename();
+    });
+
+    document.getElementById("checkAutoSynapseButton").addEventListener("click", () => {
+      requestAutoSynapseCheck();
+    });
+
+    document.getElementById("stopAutoSynapseButton").addEventListener("click", () => {
+      stopAutoSynapseTask();
+    });
+
+    document.getElementById("latestVideo").addEventListener("click", (event) => {
+      const button = event.target.closest("#downloadLatestSourceButton");
+      if (!button) {
+        return;
+      }
+      downloadLatestSourceVideo();
+    });
+
+    document.getElementById("existingClipsContainer").addEventListener("click", (event) => {
+      const aiButton = event.target.closest(".ai-process-btn");
+      if (aiButton) {
+        const card = aiButton.closest(".clip-card");
+        if (!card) return;
+
+        const subdir = aiButton.getAttribute("data-subdir") || "";
+        const filename = aiButton.getAttribute("data-filename") || "";
+        const showItemsCheckbox = card.querySelector(".ai-show-items");
+        const showItems = !!(showItemsCheckbox && showItemsCheckbox.checked);
+        const vineBoomCheckbox = card.querySelector(".ai-vine-boom");
+        const vineBoom = !!(vineBoomCheckbox && vineBoomCheckbox.checked);
+        const overlayTitleInput = card.querySelector(".ai-overlay-title");
+        const overlayTitle = (overlayTitleInput && overlayTitleInput.value ? overlayTitleInput.value.trim() : "");
+        const statusEl = card.querySelector(".ai-status");
+        if (statusEl) statusEl.textContent = "Starting AI processing...";
+        aiButton.disabled = true;
+
+        fetch("/clip-ai/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subdir,
+            filename,
+            show_items: showItems,
+            vine_boom: vineBoom,
+            overlay_title: overlayTitle
+          })
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (!data.task_id) {
+              throw new Error(data.error || "Could not start AI processing");
+            }
+            if (statusEl) statusEl.textContent = `AI task started: ${data.task_id}`;
+            startAiPolling(data.task_id, card);
+          })
+          .catch((err) => {
+            if (statusEl) statusEl.textContent = `AI start failed: ${err}`;
+          })
+          .finally(() => {
+            aiButton.disabled = false;
+          });
+        return;
+      }
+
+      const deleteButton = event.target.closest(".delete-clip-btn");
+      if (!deleteButton) return;
+      const subdir = deleteButton.getAttribute("data-subdir") || "";
+      const filename = deleteButton.getAttribute("data-filename") || "";
+      if (!filename) return;
+      if (!confirm(`Delete ${filename} and its AI artifacts?`)) {
+        return;
+      }
+
+      deleteButton.disabled = true;
+      setStatus(`Deleting ${filename}...`);
+      fetch("/existing-clips/single", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subdir, filename })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          setStatus(`Deleted ${filename}.`);
+          loadExistingClips();
+        })
+        .catch((err) => {
+          setStatus(`Delete failed: ${err}`);
+        })
+        .finally(() => {
+          deleteButton.disabled = false;
+        });
+    });
+
+    document.getElementById("deleteAllClipsButton").addEventListener("click", () => {
+      if (!confirm("Delete all existing clips and AI-generated clip files?")) {
+        return;
+      }
+
+      const button = document.getElementById("deleteAllClipsButton");
+      button.disabled = true;
+      setStatus("Deleting all clips...");
+
+      fetch("/existing-clips", { method: "DELETE" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          setStatus(`Deleted ${data.deleted_files || 0} files.`);
+          loadExistingClips();
+        })
+        .catch((err) => {
+          setStatus(`Delete failed: ${err}`);
+          loadExistingClips();
+        });
+    });
+
+    document.getElementById("stopButton").addEventListener("click", () => {
+      const taskId = localStorage.getItem("activeTaskId");
+      if (!taskId) {
+        setStatus("No active task to stop.");
+        setStopEnabled(false);
+        return;
+      }
+
+      setStatus("Stopping process...");
+      fetch(`/abort/${taskId}`, { method: "POST" })
+        .then(readJsonResponse)
+        .then((data) => {
+          setStopEnabled(false);
+          if (data && data.revoke === "failed") {
+            setStatus(`Stop partially requested: ${data.details || "revoke failed"}`);
+          } else {
+            setStatus("Stop requested.");
+          }
+          startPolling(taskId);
+        })
+        .catch((err) => setStatus(`Stop failed: ${err}`));
+    });
+
+    document.getElementById("autoSubtitlesCheckbox").addEventListener("change", (event) => {
+      localStorage.setItem("multiClipAutoSubtitles", event.target.checked ? "1" : "0");
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      if (localStorage.getItem("multiClipAutoSubtitles") === "1") {
+        document.getElementById("autoSubtitlesCheckbox").checked = true;
+      }
+      loadLatestVideo();
+      loadAutoSynapseStatus();
+      loadSourceVideos();
+      loadExistingClips();
+      setInterval(loadAutoSynapseStatus, 15000);
+
+      if (localStorage.getItem("sourceVideoUploaded") === "1") {
+        setStartEnabled(true);
+      }
+
+      const activeTaskId = localStorage.getItem("activeTaskId");
+      if (activeTaskId) {
+        setStatus(`Task still active: ${activeTaskId}`);
+        setStopEnabled(true);
+        startPolling(activeTaskId);
+      } else {
+        setStopEnabled(false);
+      }
+    });
+  </script>
+{% endblock %}

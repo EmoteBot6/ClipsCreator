@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Single League Clip Render{% endblock %}
+
+{% block extra_styles %}
+{% endblock %}
+
+{% block content %}
+  <section class="card hero-card">
+    <h2 class="page-title">Single Clip Render</h2>
+    <p class="muted">Upload one League of Legends clip or paste a YouTube link and it will run the same vertical pipeline: scoreline strip, AI player-cam detection, then automatic AI subtitles on the final render.</p>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Upload And Render</h2>
+        <p class="muted section-copy">Use a local clip or paste a YouTube URL. The latest completed render appears right underneath.</p>
+      </div>
+    </div>
+    <div class="form-stack">
+      <div class="form-row">
+        <input id="singleClipInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" />
+        <button id="startSingleRenderBtn" class="button button-success">Render Single Clip</button>
+      </div>
+      <input
+        id="singleClipUrlInput"
+        class="input-wide"
+        type="text"
+        placeholder="Optional: paste a YouTube video URL instead of uploading a file"
+      />
+      <input
+        id="singleOverlayTitle"
+        class="input-medium"
+        type="text"
+        maxlength="90"
+        placeholder="Optional intro title shown briefly above the subtitles"
+      />
+    </div>
+    <div id="singleClipStatus" class="status-box">Idle.</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <h2>Latest Render</h2>
+    </div>
+    <div id="singleClipLatestResult" class="muted">No single clip render completed yet.</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <h2>Previous Renders</h2>
+    </div>
+    <div id="singleClipRenderList" class="result-grid"></div>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    let singleClipPollingTimer = null;
+    const SINGLE_CLIP_ACTIVE_TASK_KEY = "singleClipActiveTaskId";
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    function setSingleStatus(text) {
+      document.getElementById("singleClipStatus").textContent = text;
+    }
+
+    function stopSingleClipPolling() {
+      if (singleClipPollingTimer) {
+        clearInterval(singleClipPollingTimer);
+        singleClipPollingTimer = null;
+      }
+    }
+
+    function renderSingleClipResult(result) {
+      if (!result || !result.artifacts) {
+        return;
+      }
+
+      const artifacts = result.artifacts || {};
+      const previewVideo = artifacts.edited_video || artifacts.rendered_video || "";
+      const warnings = (result.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+      const sourceLabel = result.source_url || result.source_filename || "Unknown";
+
+      document.getElementById("singleClipLatestResult").innerHTML = `
+        <div class="result-card">
+          ${previewVideo ? `<video controls src="${escapeAttr(previewVideo)}"></video>` : ""}
+          <p class="wrap-title"><strong>${escapeHtml(result.title || result.source_filename || "Single Clip Render")}</strong></p>
+          <p class="muted"><strong>Source:</strong> ${escapeHtml(sourceLabel)}</p>
+          <p class="muted"><strong>Duration:</strong> ${escapeHtml(result.duration_seconds || 0)}s</p>
+          ${result.description ? `<p class="muted">${escapeHtml(result.description)}</p>` : ""}
+          <div class="links">
+            ${artifacts.edited_video ? `<a class="pill-link" href="${escapeAttr(artifacts.edited_video)}" download>AI Edit</a>` : ""}
+            ${artifacts.rendered_video ? `<a class="pill-link" href="${escapeAttr(artifacts.rendered_video)}" download>Rendered Layout</a>` : ""}
+            ${artifacts.subtitles_srt ? `<a class="pill-link" href="${escapeAttr(artifacts.subtitles_srt)}" download>SRT</a>` : ""}
+            ${artifacts.subtitles_vtt ? `<a class="pill-link" href="${escapeAttr(artifacts.subtitles_vtt)}" download>VTT</a>` : ""}
+            ${artifacts.analysis_json ? `<a class="pill-link" href="${escapeAttr(artifacts.analysis_json)}" target="_blank" rel="noopener noreferrer">Metadata JSON</a>` : ""}
+          </div>
+          ${warnings ? `<p><strong>Warnings</strong></p><ul class="muted">${warnings}</ul>` : ""}
+        </div>
+      `;
+    }
+
+    function renderSingleClipHistory(items) {
+      const container = document.getElementById("singleClipRenderList");
+      container.innerHTML = "";
+
+      if (!Array.isArray(items) || items.length === 0) {
+        container.innerHTML = "<p class='muted'>No single clip renders yet.</p>";
+        return;
+      }
+
+      items.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "result-card";
+        const previewVideo = item.video || item.edited_video || item.rendered_video || "";
+        const warnings = (item.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+        const sourceLabel = item.source_url || item.source_filename || "Unknown";
+        card.innerHTML = `
+          ${previewVideo ? `<video controls src="${escapeAttr(previewVideo)}"></video>` : ""}
+          <p class="wrap-title"><strong>${escapeHtml(item.title || item.source_filename || item.task_id)}</strong></p>
+          <p class="muted"><strong>Source:</strong> ${escapeHtml(sourceLabel)}</p>
+          <p class="muted"><strong>Processed:</strong> ${escapeHtml(item.processed_at_utc || "Unknown")}</p>
+          <p class="muted"><strong>Duration:</strong> ${escapeHtml(item.duration_seconds || 0)}s</p>
+          ${item.description ? `<p class="muted">${escapeHtml(item.description)}</p>` : ""}
+          <div class="links">
+            ${item.edited_video ? `<a class="pill-link" href="${escapeAttr(item.edited_video)}" download>AI Edit</a>` : ""}
+            ${item.rendered_video ? `<a class="pill-link" href="${escapeAttr(item.rendered_video)}" download>Rendered Layout</a>` : ""}
+            ${item.subtitles_srt ? `<a class="pill-link" href="${escapeAttr(item.subtitles_srt)}" download>SRT</a>` : ""}
+            ${item.subtitles_vtt ? `<a class="pill-link" href="${escapeAttr(item.subtitles_vtt)}" download>VTT</a>` : ""}
+            ${item.analysis_json ? `<a class="pill-link" href="${escapeAttr(item.analysis_json)}" target="_blank" rel="noopener noreferrer">Metadata JSON</a>` : ""}
+          </div>
+          ${warnings ? `<p><strong>Warnings</strong></p><ul class="muted">${warnings}</ul>` : ""}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function loadSingleClipRenders() {
+      fetch("/single-clip/renders")
+        .then((res) => res.json())
+        .then((items) => {
+          renderSingleClipHistory(items);
+        })
+        .catch((err) => {
+          document.getElementById("singleClipRenderList").innerHTML = `<p class="muted">Could not load renders: ${err}</p>`;
+        });
+    }
+
+    function pollSingleClipTask(taskId) {
+      stopSingleClipPolling();
+
+      const fetchStatus = () => {
+        fetch(`/single-clip/status/${taskId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.state === "SUCCESS") {
+              stopSingleClipPolling();
+              localStorage.removeItem(SINGLE_CLIP_ACTIVE_TASK_KEY);
+              setSingleStatus("Single clip render complete.");
+              renderSingleClipResult(data.result || {});
+              loadSingleClipRenders();
+              return;
+            }
+
+            if (data.state === "FAILURE") {
+              stopSingleClipPolling();
+              localStorage.removeItem(SINGLE_CLIP_ACTIVE_TASK_KEY);
+              const message = (data.error && data.error.message) || data.status || "Unknown error";
+              setSingleStatus(`Render failed: ${message}`);
+              return;
+            }
+
+            const progress = data.progress || {};
+            if (data.state === "RENDERING") {
+              const frame = Number(progress.frame || 0);
+              const total = Number(progress.total || 0);
+              const percent = total > 0 ? Math.floor((frame / total) * 100) : 0;
+              setSingleStatus(progress.message || `Rendering clip layout (${percent}%).`);
+              return;
+            }
+
+            setSingleStatus(progress.message || `State: ${data.state}`);
+          })
+          .catch((err) => {
+            stopSingleClipPolling();
+            setSingleStatus(`Status polling failed: ${err}`);
+          });
+      };
+
+      fetchStatus();
+      singleClipPollingTimer = setInterval(fetchStatus, 2200);
+    }
+
+    document.getElementById("startSingleRenderBtn").addEventListener("click", () => {
+      const fileInput = document.getElementById("singleClipInput");
+      const sourceUrl = document.getElementById("singleClipUrlInput").value.trim();
+      const hasFile = !!(fileInput.files && fileInput.files.length > 0);
+      if (!hasFile && !sourceUrl) {
+        setSingleStatus("Select a single clip file or paste a YouTube URL first.");
+        return;
+      }
+
+      const formData = new FormData();
+      if (hasFile) {
+        formData.append("source_video", fileInput.files[0]);
+      }
+      formData.append("source_url", sourceUrl);
+      formData.append("overlay_title", document.getElementById("singleOverlayTitle").value.trim());
+
+      setSingleStatus(sourceUrl ? "Starting YouTube download and render..." : "Uploading clip and starting render...");
+      fetch("/single-clip/render", {
+        method: "POST",
+        body: formData
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.task_id) {
+            throw new Error(data.error || "Could not start single clip render.");
+          }
+          localStorage.setItem(SINGLE_CLIP_ACTIVE_TASK_KEY, data.task_id);
+          setSingleStatus(`Task started: ${data.task_id}`);
+          pollSingleClipTask(data.task_id);
+        })
+        .catch((err) => {
+          setSingleStatus(`Could not start render: ${err}`);
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadSingleClipRenders();
+      const activeTaskId = localStorage.getItem(SINGLE_CLIP_ACTIVE_TASK_KEY);
+      if (activeTaskId) {
+        setSingleStatus(`Resuming task status: ${activeTaskId}`);
+        pollSingleClipTask(activeTaskId);
+      }
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>League Clips Generator</title>
+  <style>
+    :root {
+      --bg: #f3f5f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --success-hover: #15803d;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+      --border: #dbe3ee;
+    }
+
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: var(--text);
+      background: radial-gradient(circle at top right, #e2ebff 0%, var(--bg) 48%);
+    }
+
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(20, 32, 51, 0.05);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .button-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .button-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .button-success {
+      background: var(--success);
+      color: #fff;
+    }
+
+    .button-success:hover {
+      background: var(--success-hover);
+    }
+
+    .button-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .button-danger:hover {
+      background: var(--danger-hover);
+    }
+
+    .button[disabled] {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    #latestVideo {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 16px;
+    }
+
+    #latestVideo img {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    #latestVideo > div {
+      min-width: 0;
+    }
+
+    .wrap-title {
+      margin: 0 0 8px 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .clip-wrapper {
+      display: flex;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
+      background: #fdfefe;
+    }
+
+    .clip-left, .clip-right {
+      flex: 1;
+    }
+
+    .clip-right {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .clip-right video {
+      width: min(320px, 100%);
+      max-height: 220px;
+      border-radius: 8px;
+    }
+
+    .progress-bg {
+      width: 100%;
+      height: 14px;
+      background: #dbe4f0;
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 6px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+      transition: width 0.3s ease;
+    }
+
+    #existingClipsContainer {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .clip-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .clip-card video {
+      width: 100%;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .download-link {
+      display: inline-block;
+      text-decoration: none;
+      background: var(--success);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+
+    .ai-panel {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+
+    @media (max-width: 820px) {
+      #latestVideo {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="card">
+      <h2>Latest Synapse Video</h2>
+      <div id="latestVideo" class="muted">Loading latest video...</div>
+    </div>
+
+    <div class="card">
+      <h2>Source Video Upload</h2>
+      <p class="muted">Upload once, then reuse previous source videos anytime by selecting one as active.</p>
+      <div class="row">
+        <input id="sourceVideoInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm" />
+        <button id="uploadButton" class="button button-primary">Upload Source Video</button>
+      </div>
+      <div class="row" style="margin-top: 10px;">
+        <select id="sourceVideoSelect" style="padding: 10px; min-width: 280px; border-radius: 8px; border: 1px solid var(--border);"></select>
+        <button id="refreshSourcesButton" class="button button-primary">Refresh Sources</button>
+        <button id="selectSourceButton" class="button button-primary">Use Selected Source</button>
+        <button id="startButton" class="button button-success" disabled>Start Split Process</button>
+        <button id="stopButton" class="button button-danger" disabled>Stop Process</button>
+      </div>
+      <div class="row" style="margin-top: 10px;">
+        <input
+          id="sourceVideoUrlInput"
+          type="text"
+          placeholder="Optional: https://www.youtube.com/watch?v=... (for description timestamps)"
+          style="padding: 10px; min-width: 420px; border-radius: 8px; border: 1px solid var(--border);"
+        />
+        <button
+          type="button"
+          class="button button-primary"
+          onclick="window.open('https://app.ytdown.to/en10/', '_blank', 'noopener,noreferrer')"
+        >Downloader</button>
+      </div>
+      <p id="statusText"><strong>Status:</strong> Idle</p>
+    </div>
+
+    <div class="card">
+      <h2>Current Processing</h2>
+      <div id="clipProgressContainer"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content: space-between;">
+        <h2 style="margin: 0;">Existing Clips</h2>
+        <button id="deleteAllClipsButton" class="button button-danger">Delete All Clips</button>
+      </div>
+      <div id="existingClipsContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    let pollInterval = null;
+    const aiPollers = new Map();
+    let latestSynapseUrl = "";
+
+    function setStatus(message) {
+      document.getElementById("statusText").innerHTML = `<strong>Status:</strong> ${message}`;
+    }
+
+    function setStartEnabled(enabled) {
+      document.getElementById("startButton").disabled = !enabled;
+    }
+
+    function setStopEnabled(enabled) {
+      document.getElementById("stopButton").disabled = !enabled;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes || bytes <= 0) return "0 MB";
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function readJsonResponse(res) {
+      return res.text().then((text) => {
+        let data = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (err) {
+            throw new Error(`Server returned invalid JSON (${res.status})`);
+          }
+        }
+        if (!res.ok) {
+          throw new Error(data.error || data.status || data.details || `Request failed (${res.status})`);
+        }
+        return data;
+      });
+    }
+
+    function extractYoutubeId(text) {
+      if (!text) return "";
+      const trimmed = String(text).trim();
+      const directMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+      if (directMatch) return directMatch[1];
+      const filenameTokenMatch = trimmed.match(/(?:^|[_\s.])([A-Za-z0-9_-]{11})(?:[_\s.]|$)/);
+      return filenameTokenMatch ? filenameTokenMatch[1] : "";
+    }
+
+    function updateSourceUrlFromSelectedFilename() {
+      const input = document.getElementById("sourceVideoUrlInput");
+      if (!input || input.value.trim()) {
+        return;
+      }
+      const selected = document.getElementById("sourceVideoSelect").value;
+      const videoId = extractYoutubeId(selected);
+      if (videoId) {
+        input.value = `https://www.youtube.com/watch?v=${videoId}`;
+      }
+    }
+
+    function updateSourceUrlFromLatestVideo() {
+      const input = document.getElementById("sourceVideoUrlInput");
+      if (!input || !latestSynapseUrl) {
+        return;
+      }
+      input.value = latestSynapseUrl;
+    }
+
+    function loadSourceVideos() {
+      fetch("/source-videos")
+        .then((res) => res.json())
+        .then((data) => {
+          const select = document.getElementById("sourceVideoSelect");
+          select.innerHTML = "";
+
+          const videos = data.videos || [];
+          if (videos.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No uploaded source videos";
+            select.appendChild(opt);
+            setStartEnabled(false);
+            localStorage.removeItem("sourceVideoUploaded");
+            return;
+          }
+
+          videos.forEach((video) => {
+            const opt = document.createElement("option");
+            opt.value = video.filename;
+            const activeTag = video.is_active ? " [active]" : "";
+            opt.textContent = `${video.filename} (${formatSize(video.size_bytes)})${activeTag}`;
+            if (video.is_active) {
+              opt.selected = true;
+            }
+            select.appendChild(opt);
+          });
+
+          const hasActive = videos.some((video) => video.is_active);
+          setStartEnabled(hasActive);
+          if (hasActive) {
+            localStorage.setItem("sourceVideoUploaded", "1");
+          } else {
+            localStorage.removeItem("sourceVideoUploaded");
+          }
+          updateSourceUrlFromSelectedFilename();
+        })
+        .catch((err) => {
+          setStatus(`Could not load source videos: ${err}`);
+        });
+    }
+
+    function loadLatestVideo() {
+      fetch("/latest-synapse-video")
+        .then((res) => res.json())
+        .then((data) => {
+          const container = document.getElementById("latestVideo");
+          if (data.error) {
+            container.innerHTML = `<p class="muted">Failed: ${data.error}</p>`;
+            return;
+          }
+          const thumbnailHtml = data.thumbnail
+            ? `<img src="${data.thumbnail}" alt="Latest Synapse video thumbnail" />`
+            : `<div class="muted">No thumbnail available</div>`;
+          latestSynapseUrl = data.url || "";
+          container.innerHTML = `
+            ${thumbnailHtml}
+            <div>
+              <h3 class="wrap-title">${data.title || "Latest Synapse video"}</h3>
+              <p class="muted">Channel: ${data.channel || "Synapse"}</p>
+              <a class="download-link" href="${data.url}" target="_blank" rel="noopener noreferrer">Open YouTube Video</a>
+            </div>
+          `;
+          updateSourceUrlFromLatestVideo();
+        })
+        .catch((err) => {
+          document.getElementById("latestVideo").innerHTML = `<p class="muted">Error: ${err}</p>`;
+        });
+    }
+
+    function loadExistingClips() {
+      fetch("/existing-clips")
+        .then((res) => res.json())
+        .then((clips) => {
+          const container = document.getElementById("existingClipsContainer");
+          const deleteAllButton = document.getElementById("deleteAllClipsButton");
+          container.innerHTML = "";
+          if (!clips || clips.length === 0) {
+            if (deleteAllButton) deleteAllButton.disabled = true;
+            container.innerHTML = "<p class='muted'>No clips available yet.</p>";
+            return;
+          }
+          if (deleteAllButton) deleteAllButton.disabled = false;
+          clips.forEach((clip) => {
+            const card = document.createElement("div");
+            card.className = "clip-card";
+            const clipUrl = `/videos/${clip.subdir}/${clip.filename}`;
+            const key = `${clip.subdir || "root"}-${clip.filename || "clip"}`.replace(/[^A-Za-z0-9_-]/g, "_");
+            card.innerHTML = `
+              <video controls src="${clipUrl}"></video>
+              <a class="download-link" href="${clipUrl}" download>Download</a>
+              <div class="ai-panel">
+                <div class="row" style="justify-content: space-between; align-items: center;">
+                  <div style="display: inline-flex; align-items: center; gap: 8px;">
+                    <button class="button button-primary ai-process-btn" data-subdir="${clip.subdir}" data-filename="${clip.filename}">AI Process Clip</button>
+                    <button class="button delete-clip-btn" data-subdir="${clip.subdir}" data-filename="${clip.filename}">Delete Video</button>
+                  </div>
+                  <div style="display: inline-flex; align-items: center; gap: 12px;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px;">
+                      <input type="checkbox" class="ai-show-items" />
+                      <span>Show Items</span>
+                    </label>
+                    <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px;">
+                      <input type="checkbox" class="ai-vine-boom" />
+                      <span>Vine Boom</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="row" style="margin-top: 8px;">
+                  <input
+                    type="text"
+                    class="ai-overlay-title"
+                    placeholder="Optional scoreline title (shown briefly at start)"
+                    maxlength="90"
+                    style="padding: 8px 10px; width: 100%; border-radius: 8px; border: 1px solid var(--border);"
+                  />
+                </div>
+                <p class="muted ai-status" id="ai-status-${key}">Not processed yet.</p>
+                <div class="ai-result"></div>
+              </div>
+            `;
+            container.appendChild(card);
+          });
+        })
+        .catch((err) => {
+          document.getElementById("existingClipsContainer").innerHTML = `<p class='muted'>Error loading clips: ${err}</p>`;
+          const deleteAllButton = document.getElementById("deleteAllClipsButton");
+          if (deleteAllButton) deleteAllButton.disabled = true;
+        });
+    }
+
+    function renderAiResult(card, result) {
+      const resultContainer = card.querySelector(".ai-result");
+      if (!resultContainer || !result) return;
+
+      const artifacts = result.artifacts || {};
+      const editedVideo = artifacts.edited_video || "";
+      const overlayTitle = result.overlay_title || "";
+      const warnings = (result.warnings || []).map((w) => `<li>${w}</li>`).join("");
+
+      resultContainer.innerHTML = `
+        <p class="wrap-title"><strong>${result.title || "AI Title"}</strong></p>
+        <p class="muted">${result.description || ""}</p>
+        ${overlayTitle ? `<p class="muted"><strong>Overlay title:</strong> ${overlayTitle}</p>` : ""}
+        ${editedVideo ? `
+          <video controls src="${editedVideo}"></video>
+          <div style="margin-top: 8px;">
+            <a class="download-link" href="${editedVideo}" download>Download AI Edit</a>
+          </div>
+        ` : ""}
+        ${warnings ? `<p class="muted"><strong>Warnings:</strong></p><ul class="muted">${warnings}</ul>` : ""}
+      `;
+    }
+
+    function stopAiPolling(taskId) {
+      if (aiPollers.has(taskId)) {
+        clearInterval(aiPollers.get(taskId));
+        aiPollers.delete(taskId);
+      }
+    }
+
+    function startAiPolling(taskId, card) {
+      stopAiPolling(taskId);
+      const poller = setInterval(() => {
+        fetch(`/clip-ai/status/${taskId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            const statusEl = card.querySelector(".ai-status");
+            if (!statusEl) {
+              stopAiPolling(taskId);
+              return;
+            }
+            if (data.state === "SUCCESS") {
+              statusEl.textContent = "AI processing complete.";
+              renderAiResult(card, data.result || {});
+              stopAiPolling(taskId);
+              return;
+            }
+            if (data.state === "FAILURE") {
+              const message = (data.error && data.error.message) || data.status || "Unknown error";
+              statusEl.textContent = `AI processing failed: ${message}`;
+              stopAiPolling(taskId);
+              return;
+            }
+            const progress = data.progress || {};
+            statusEl.textContent = progress.message || `AI state: ${data.state}`;
+          })
+          .catch((err) => {
+            const statusEl = card.querySelector(".ai-status");
+            if (statusEl) statusEl.textContent = `AI status error: ${err}`;
+            stopAiPolling(taskId);
+          });
+      }, 1800);
+      aiPollers.set(taskId, poller);
+    }
+
+    function checkTaskStatus(taskId) {
+      fetch(`/status/${taskId}`)
+        .then(readJsonResponse)
+        .then((data) => {
+          if (data.state === "RENDERING") {
+            const { clip, frame, total, index, message } = data.progress;
+            const percent = total > 0 ? Math.floor((frame / total) * 100) : 0;
+            const clipId = `clip-${index}`;
+
+            let wrapper = document.getElementById(clipId);
+            if (!wrapper) {
+              wrapper = document.createElement("div");
+              wrapper.id = clipId;
+              wrapper.className = "clip-wrapper";
+              wrapper.innerHTML = `
+                <div class="clip-left">
+                  <p><strong>${clip}</strong></p>
+                  <div class="progress-bg"><div id="bar-${index}" class="progress-fill"></div></div>
+                  <p id="percent-${index}">0%</p>
+                  <p id="text-${index}" class="muted">Rendering...</p>
+                </div>
+                <div class="clip-right" id="right-${index}"></div>
+              `;
+              document.getElementById("clipProgressContainer").appendChild(wrapper);
+            }
+
+            document.getElementById(`bar-${index}`).style.width = `${percent}%`;
+            document.getElementById(`percent-${index}`).textContent = `${percent}%`;
+            document.getElementById(`text-${index}`).textContent = message || `Rendering ${clip}`;
+            setStatus(`Rendering ${clip} (${percent}%)`);
+            return;
+          }
+
+          if (data.state === "PROGRESS") {
+            const { clip, index } = data.progress;
+            const prevIndex = index - 1;
+            if (prevIndex >= 0) {
+              const filename = `clip_${prevIndex}.mp4`;
+              const url = `/videos/${prevIndex}/${filename}`;
+              fetch(url).then((response) => {
+                if (!response.ok || document.getElementById(`preview-${prevIndex}`)) {
+                  return;
+                }
+                const previewContainer = document.getElementById(`right-${prevIndex}`);
+                if (!previewContainer) {
+                  return;
+                }
+                const video = document.createElement("video");
+                video.controls = true;
+                video.id = `preview-${prevIndex}`;
+                video.src = url;
+                video.width = 320;
+                previewContainer.appendChild(video);
+
+                const dl = document.createElement("a");
+                dl.className = "download-link";
+                dl.href = url;
+                dl.download = "";
+                dl.textContent = "Download";
+                previewContainer.appendChild(dl);
+
+                const textEl = document.getElementById(`text-${prevIndex}`);
+                if (textEl) textEl.textContent = `Done: ${clip}`;
+              });
+            }
+            return;
+          }
+
+          if (data.state === "SUCCESS") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            if (data.result && data.result.status === "aborted") {
+              setStatus("Process stopped.");
+            } else {
+              setStatus("All clips rendered.");
+            }
+            loadExistingClips();
+            return;
+          }
+
+          if (data.state === "FAILURE") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            const message = (data.error && data.error.message) || data.status || "Unknown error";
+            setStatus(`Failed: ${message}`);
+            return;
+          }
+
+          if (data.state === "REVOKED") {
+            clearInterval(pollInterval);
+            localStorage.removeItem("activeTaskId");
+            setStopEnabled(false);
+            setStatus("Process stopped.");
+            loadExistingClips();
+            return;
+          }
+
+          setStatus(data.state || "Waiting...");
+        })
+        .catch((err) => {
+          clearInterval(pollInterval);
+          setStatus(`Status fetch error: ${err}`);
+        });
+    }
+
+    function startPolling(taskId) {
+      clearInterval(pollInterval);
+      pollInterval = setInterval(() => checkTaskStatus(taskId), 2000);
+    }
+
+    document.getElementById("uploadButton").addEventListener("click", () => {
+      const fileInput = document.getElementById("sourceVideoInput");
+      if (!fileInput.files || fileInput.files.length === 0) {
+        setStatus("Select a source video file first.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("source_video", fileInput.files[0]);
+      setStatus("Uploading source video...");
+
+      fetch("/upload-source-video", {
+        method: "POST",
+        body: formData
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            setStatus(`Upload failed: ${data.error}`);
+            setStartEnabled(false);
+            return;
+          }
+          setStartEnabled(true);
+          localStorage.setItem("sourceVideoUploaded", "1");
+          setStatus(`Uploaded ${data.filename} (${formatSize(data.size_bytes)})`);
+          loadSourceVideos();
+        })
+        .catch((err) => {
+          setStatus(`Upload error: ${err}`);
+          setStartEnabled(false);
+        });
+    });
+
+    document.getElementById("refreshSourcesButton").addEventListener("click", () => {
+      loadSourceVideos();
+      setStatus("Source video list refreshed.");
+    });
+
+    document.getElementById("selectSourceButton").addEventListener("click", () => {
+      const selected = document.getElementById("sourceVideoSelect").value;
+      if (!selected) {
+        setStatus("Select a source video first.");
+        return;
+      }
+
+      fetch("/source-videos/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selected })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            setStatus(`Could not select source: ${data.error}`);
+            setStartEnabled(false);
+            return;
+          }
+          if (!document.getElementById("sourceVideoUrlInput").value.trim()) {
+            const videoId = extractYoutubeId(data.active || selected);
+            if (videoId) {
+              document.getElementById("sourceVideoUrlInput").value = `https://www.youtube.com/watch?v=${videoId}`;
+            }
+          }
+          localStorage.setItem("sourceVideoUploaded", "1");
+          setStartEnabled(true);
+          setStatus(`Active source set to: ${data.active}`);
+          loadSourceVideos();
+        })
+        .catch((err) => {
+          setStatus(`Source selection failed: ${err}`);
+          setStartEnabled(false);
+        });
+    });
+
+    document.getElementById("startButton").addEventListener("click", () => {
+      setStatus("Starting split process...");
+      const sourceUrl = document.getElementById("sourceVideoUrlInput").value.trim();
+      fetch("/start-process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_url: sourceUrl })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          const taskId = data.task_id;
+          if (!taskId) {
+            setStatus("Could not start process.");
+            return;
+          }
+          localStorage.setItem("activeTaskId", taskId);
+          setStatus(`Task started: ${taskId}`);
+          setStopEnabled(true);
+          startPolling(taskId);
+        })
+        .catch((err) => setStatus(`Error starting process: ${err}`));
+    });
+
+    document.getElementById("sourceVideoSelect").addEventListener("change", () => {
+      updateSourceUrlFromSelectedFilename();
+    });
+
+    document.getElementById("existingClipsContainer").addEventListener("click", (event) => {
+      const aiButton = event.target.closest(".ai-process-btn");
+      if (aiButton) {
+        const card = aiButton.closest(".clip-card");
+        if (!card) return;
+
+        const subdir = aiButton.getAttribute("data-subdir") || "";
+        const filename = aiButton.getAttribute("data-filename") || "";
+        const showItemsCheckbox = card.querySelector(".ai-show-items");
+        const showItems = !!(showItemsCheckbox && showItemsCheckbox.checked);
+        const vineBoomCheckbox = card.querySelector(".ai-vine-boom");
+        const vineBoom = !!(vineBoomCheckbox && vineBoomCheckbox.checked);
+        const overlayTitleInput = card.querySelector(".ai-overlay-title");
+        const overlayTitle = (overlayTitleInput && overlayTitleInput.value ? overlayTitleInput.value.trim() : "");
+        const statusEl = card.querySelector(".ai-status");
+        if (statusEl) statusEl.textContent = "Starting AI processing...";
+        aiButton.disabled = true;
+
+        fetch("/clip-ai/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subdir,
+            filename,
+            show_items: showItems,
+            vine_boom: vineBoom,
+            overlay_title: overlayTitle
+          })
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (!data.task_id) {
+              throw new Error(data.error || "Could not start AI processing");
+            }
+            if (statusEl) statusEl.textContent = `AI task started: ${data.task_id}`;
+            startAiPolling(data.task_id, card);
+          })
+          .catch((err) => {
+            if (statusEl) statusEl.textContent = `AI start failed: ${err}`;
+          })
+          .finally(() => {
+            aiButton.disabled = false;
+          });
+        return;
+      }
+
+      const deleteButton = event.target.closest(".delete-clip-btn");
+      if (!deleteButton) return;
+      const subdir = deleteButton.getAttribute("data-subdir") || "";
+      const filename = deleteButton.getAttribute("data-filename") || "";
+      if (!filename) return;
+      if (!confirm(`Delete ${filename} and its AI artifacts?`)) {
+        return;
+      }
+
+      deleteButton.disabled = true;
+      setStatus(`Deleting ${filename}...`);
+      fetch("/existing-clips/single", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subdir, filename })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          setStatus(`Deleted ${filename}.`);
+          loadExistingClips();
+        })
+        .catch((err) => {
+          setStatus(`Delete failed: ${err}`);
+        })
+        .finally(() => {
+          deleteButton.disabled = false;
+        });
+    });
+
+    document.getElementById("deleteAllClipsButton").addEventListener("click", () => {
+      if (!confirm("Delete all existing clips and AI-generated clip files?")) {
+        return;
+      }
+
+      const button = document.getElementById("deleteAllClipsButton");
+      button.disabled = true;
+      setStatus("Deleting all clips...");
+
+      fetch("/existing-clips", { method: "DELETE" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          setStatus(`Deleted ${data.deleted_files || 0} files.`);
+          loadExistingClips();
+        })
+        .catch((err) => {
+          setStatus(`Delete failed: ${err}`);
+          loadExistingClips();
+        });
+    });
+
+    document.getElementById("stopButton").addEventListener("click", () => {
+      const taskId = localStorage.getItem("activeTaskId");
+      if (!taskId) {
+        setStatus("No active task to stop.");
+        setStopEnabled(false);
+        return;
+      }
+
+      setStatus("Stopping process...");
+      fetch(`/abort/${taskId}`, { method: "POST" })
+        .then(readJsonResponse)
+        .then((data) => {
+          setStopEnabled(false);
+          if (data && data.revoke === "failed") {
+            setStatus(`Stop partially requested: ${data.details || "revoke failed"}`);
+          } else {
+            setStatus("Stop requested.");
+          }
+          startPolling(taskId);
+        })
+        .catch((err) => setStatus(`Stop failed: ${err}`));
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadLatestVideo();
+      loadSourceVideos();
+      loadExistingClips();
+
+      if (localStorage.getItem("sourceVideoUploaded") === "1") {
+        setStartEnabled(true);
+      }
+
+      const activeTaskId = localStorage.getItem("activeTaskId");
+      if (activeTaskId) {
+        setStatus(`Task still active: ${activeTaskId}`);
+        setStopEnabled(true);
+        startPolling(activeTaskId);
+      } else {
+        setStopEnabled(false);
+      }
+    });
+  </script>
+</body>
+</html>

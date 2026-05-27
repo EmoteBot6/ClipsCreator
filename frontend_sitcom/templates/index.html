@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sitcom Mobile Editor</title>
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #d7deea;
+      --primary: #0f766e;
+      --primary-hover: #0d665f;
+      --danger: #b91c1c;
+      --danger-hover: #991b1b;
+      --success: #166534;
+      --success-hover: #14532d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, #d9f6f3 0%, transparent 35%),
+        radial-gradient(circle at 100% 0%, #d8e9ff 0%, transparent 40%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+    }
+
+    .title {
+      margin: 0 0 6px 0;
+      font-size: 1.45rem;
+    }
+
+    .muted {
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .button-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .button-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .button-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .button-danger:hover {
+      background: var(--danger-hover);
+    }
+
+    .button-success {
+      background: var(--success);
+      color: #fff;
+    }
+
+    .button-success:hover {
+      background: var(--success-hover);
+    }
+
+    .button[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    input[type="text"],
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      color: var(--text);
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .span-6 {
+      grid-column: span 6;
+    }
+
+    .span-12 {
+      grid-column: span 12;
+    }
+
+    .status-box {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px dashed var(--border);
+      background: #f8fafc;
+      min-height: 56px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .result-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .result-card video {
+      width: 100%;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: #000;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .link {
+      text-decoration: none;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--text);
+      background: #f8fafc;
+    }
+
+    @media (max-width: 920px) {
+      .span-6 {
+        grid-column: span 12;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <section class="card">
+      <h1 class="title">Sitcom Mobile Editor</h1>
+      <p class="muted">Upload an episode, remove scenes, create a 9:16 mobile edit, and add subtitles.</p>
+    </section>
+
+    <section class="card">
+      <h2 class="title">Source Library</h2>
+      <div class="row">
+        <input id="sourceVideoInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" />
+        <button id="uploadSourceBtn" class="button button-primary">Upload</button>
+      </div>
+      <div class="row">
+        <select id="sourceSelect"></select>
+        <button id="refreshSourcesBtn" class="button button-primary">Refresh</button>
+        <button id="useSourceBtn" class="button button-success">Use Selected</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="title">Edit Job</h2>
+      <div class="grid">
+        <div class="span-6">
+          <label for="removeRangesInput"><strong>Manual Remove Ranges</strong></label>
+          <textarea id="removeRangesInput" placeholder="One range per line. Examples:&#10;00:02:10-00:03:22&#10;410-430"></textarea>
+          <p class="muted">Ranges are removed from the output timeline.</p>
+        </div>
+        <div class="span-6">
+          <label for="aiRemoveInput"><strong>AI Remove Instruction</strong></label>
+          <input id="aiRemoveInput" type="text" placeholder="Example: remove any cafeteria argument scenes" />
+          <p class="muted">Optional. Uses transcript + local LLM to propose additional cut ranges.</p>
+        </div>
+        <div class="span-6">
+          <label><strong>AI Auto-Cut</strong></label>
+          <div class="row" style="margin-top: 6px;">
+            <label><input id="aiAutoEdit" type="checkbox" checked /> Let AI guess and cut automatically</label>
+          </div>
+          <p class="muted">If enabled, AI can propose cuts even with no manual ranges or prompt.</p>
+        </div>
+        <div class="span-6">
+          <label for="targetKeepRatio"><strong>Keep Footage Ratio</strong></label>
+          <input id="targetKeepRatio" type="text" value="0.72" />
+          <p class="muted">0.72 keeps ~72% of footage and removes ~28% (auto-cut guidance).</p>
+        </div>
+        <div class="span-6">
+          <label for="mobileMode"><strong>Mobile Framing</strong></label>
+          <select id="mobileMode">
+            <option value="blur">Blur background (recommended)</option>
+            <option value="crop">Center crop</option>
+            <option value="pad">Black bars (full frame)</option>
+          </select>
+        </div>
+        <div class="span-6">
+          <label for="clipMaxSeconds"><strong>Clip Length (max seconds)</strong></label>
+          <input id="clipMaxSeconds" type="text" value="60" />
+          <p class="muted">The final edited output is split into sequential clips with this max length.</p>
+        </div>
+        <div class="span-6">
+          <label for="subtitleLanguage"><strong>Subtitle Language</strong></label>
+          <input id="subtitleLanguage" type="text" placeholder="Optional language code, e.g. en, de, es" />
+        </div>
+        <div class="span-6">
+          <label for="clipMinSeconds"><strong>Clip Length (min seconds)</strong></label>
+          <input id="clipMinSeconds" type="text" value="12" />
+          <p class="muted">Tiny tails below this threshold are merged into the previous clip.</p>
+        </div>
+        <div class="span-12 row">
+          <label><input id="generateSubtitles" type="checkbox" checked /> Generate subtitles (SRT/VTT)</label>
+          <label><input id="burnSubtitles" type="checkbox" checked /> Burn subtitles into video</label>
+        </div>
+        <div class="span-12 row">
+          <button id="startEditBtn" class="button button-success">Start Sitcom Edit</button>
+          <button id="stopPollingBtn" class="button button-danger">Stop Polling</button>
+        </div>
+      </div>
+      <div class="status-box" id="statusBox">Idle.</div>
+    </section>
+
+    <section class="card">
+      <h2 class="title">Latest Result</h2>
+      <div id="latestResult" class="muted">No completed edit yet.</div>
+    </section>
+
+    <section class="card">
+      <h2 class="title">Existing Sitcom Edits</h2>
+      <div id="editList" class="result-grid"></div>
+    </section>
+  </div>
+
+  <script>
+    let pollingTimer = null;
+    const SITCOM_ACTIVE_TASK_KEY = "sitcomActiveTaskId";
+
+    function setStatus(text) {
+      document.getElementById("statusBox").textContent = text;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes || bytes <= 0) return "0 MB";
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function parseRangeLines(rawText) {
+      return String(rawText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+
+    function loadSources() {
+      fetch("/sitcom/sources")
+        .then((res) => res.json())
+        .then((data) => {
+          const select = document.getElementById("sourceSelect");
+          select.innerHTML = "";
+          const videos = data.videos || [];
+
+          if (!videos.length) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No uploaded sitcom sources yet";
+            select.appendChild(opt);
+            return;
+          }
+
+          videos.forEach((video) => {
+            const opt = document.createElement("option");
+            opt.value = video.filename;
+            const active = video.is_active ? " [active]" : "";
+            opt.textContent = `${video.filename} (${formatSize(video.size_bytes)})${active}`;
+            if (video.is_active) opt.selected = true;
+            select.appendChild(opt);
+          });
+        })
+        .catch((err) => setStatus(`Could not load sources: ${err}`));
+    }
+
+    function loadEdits() {
+      fetch("/sitcom/edits")
+        .then((res) => res.json())
+        .then((items) => {
+          const container = document.getElementById("editList");
+          container.innerHTML = "";
+          if (!Array.isArray(items) || !items.length) {
+            container.innerHTML = "<p class='muted'>No sitcom edits yet.</p>";
+            return;
+          }
+
+          items.forEach((item) => {
+            const card = document.createElement("div");
+            card.className = "result-card";
+            const clips = Array.isArray(item.clips) ? item.clips : [];
+            const clipLinks = clips
+              .slice(0, 8)
+              .map((clip, index) => {
+                const url = clip.url || "";
+                if (!url) return "";
+                const label = clip.index ? `Clip ${clip.index}` : `Clip ${index + 1}`;
+                return `<a class="link" href="${url}" download>${label}</a>`;
+              })
+              .join("");
+            const subtitleLinks = [
+              item.subtitles_srt ? `<a class="link" href="${item.subtitles_srt}" download>SRT</a>` : "",
+              item.subtitles_vtt ? `<a class="link" href="${item.subtitles_vtt}" download>VTT</a>` : ""
+            ].join("");
+
+            card.innerHTML = `
+              <video controls src="${item.video}"></video>
+              <p><strong>Task:</strong> ${item.task_id}</p>
+              <p class="muted"><strong>Source:</strong> ${item.source_filename || "Unknown"}</p>
+              <p class="muted"><strong>Size:</strong> ${formatSize(item.size_bytes)}</p>
+              <p class="muted"><strong>Mode:</strong> ${item.mobile_mode || "blur"}</p>
+              <p class="muted"><strong>Clips:</strong> ${item.clip_count || clips.length || 1}</p>
+              <div class="links">
+                <a class="link" href="${item.video_full || item.video}" download>Download Full Edit</a>
+                ${clipLinks}
+                ${subtitleLinks}
+              </div>
+            `;
+            container.appendChild(card);
+          });
+        })
+        .catch((err) => setStatus(`Could not load edit list: ${err}`));
+    }
+
+    function renderLatestResult(result) {
+      if (!result || !result.artifacts) {
+        return;
+      }
+      const artifacts = result.artifacts || {};
+      const clips = Array.isArray(artifacts.clips) ? artifacts.clips : [];
+      const warnings = (result.warnings || []).map((w) => `<li>${w}</li>`).join("");
+      const removedCount = (result.removed_segments || []).length;
+      const clipLinks = clips
+        .map((clip, index) => {
+          const url = clip.url || "";
+          if (!url) return "";
+          const label = clip.index ? `Clip ${clip.index}` : `Clip ${index + 1}`;
+          return `<a class="link" href="${url}" download>${label}</a>`;
+        })
+        .join("");
+      const previewVideo = clips.length && clips[0].url ? clips[0].url : (artifacts.video || "");
+
+      document.getElementById("latestResult").innerHTML = `
+        <div class="result-card">
+          <video controls src="${previewVideo}"></video>
+          <p><strong>Source:</strong> ${result.source_filename || ""}</p>
+          <p class="muted"><strong>Duration:</strong> ${result.duration_seconds || 0}s</p>
+          <p class="muted"><strong>Removed Segments:</strong> ${removedCount}</p>
+          <p class="muted"><strong>Generated Clips:</strong> ${clips.length || 1}</p>
+          <div class="links">
+            ${artifacts.video ? `<a class="link" href="${artifacts.video}" download>Download Full Edit</a>` : ""}
+            ${clipLinks}
+            ${artifacts.subtitles_srt ? `<a class="link" href="${artifacts.subtitles_srt}" download>SRT</a>` : ""}
+            ${artifacts.subtitles_vtt ? `<a class="link" href="${artifacts.subtitles_vtt}" download>VTT</a>` : ""}
+            ${artifacts.metadata_json ? `<a class="link" href="${artifacts.metadata_json}" target="_blank" rel="noopener noreferrer">Metadata JSON</a>` : ""}
+          </div>
+          ${warnings ? `<p><strong>Warnings</strong></p><ul>${warnings}</ul>` : ""}
+        </div>
+      `;
+    }
+
+    function stopPolling() {
+      if (pollingTimer) {
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+      }
+    }
+
+    function pollTask(taskId) {
+      stopPolling();
+
+      const fetchStatus = () => {
+        fetch(`/sitcom/edit/status/${taskId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.state === "SUCCESS") {
+              stopPolling();
+              localStorage.removeItem(SITCOM_ACTIVE_TASK_KEY);
+              setStatus("Sitcom edit complete.");
+              renderLatestResult(data.result || {});
+              loadEdits();
+              return;
+            }
+            if (data.state === "FAILURE") {
+              stopPolling();
+              localStorage.removeItem(SITCOM_ACTIVE_TASK_KEY);
+              const message = (data.error && data.error.message) || data.status || "Unknown error";
+              setStatus(`Edit failed: ${message}`);
+              return;
+            }
+            const progress = data.progress || {};
+            setStatus(progress.message || `State: ${data.state}`);
+          })
+          .catch((err) => {
+            stopPolling();
+            setStatus(`Status polling failed: ${err}`);
+          });
+      };
+
+      fetchStatus();
+      pollingTimer = setInterval(fetchStatus, 2200);
+    }
+
+    document.getElementById("uploadSourceBtn").addEventListener("click", () => {
+      const fileInput = document.getElementById("sourceVideoInput");
+      if (!fileInput.files || fileInput.files.length === 0) {
+        setStatus("Select a source file first.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("source_video", fileInput.files[0]);
+      setStatus("Uploading source...");
+      fetch("/sitcom/upload-source", { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          setStatus(`Uploaded ${data.filename}.`);
+          loadSources();
+        })
+        .catch((err) => setStatus(`Upload failed: ${err}`));
+    });
+
+    document.getElementById("refreshSourcesBtn").addEventListener("click", () => {
+      loadSources();
+      setStatus("Source list refreshed.");
+    });
+
+    document.getElementById("useSourceBtn").addEventListener("click", () => {
+      const filename = document.getElementById("sourceSelect").value;
+      if (!filename) {
+        setStatus("Select a source first.");
+        return;
+      }
+      fetch("/sitcom/sources/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) throw new Error(data.error);
+          setStatus(`Active source set: ${data.active}`);
+          loadSources();
+        })
+        .catch((err) => setStatus(`Could not set active source: ${err}`));
+    });
+
+    document.getElementById("startEditBtn").addEventListener("click", () => {
+      const sourceFilename = document.getElementById("sourceSelect").value || "";
+      const removeRanges = parseRangeLines(document.getElementById("removeRangesInput").value);
+      const aiRemoveQuery = document.getElementById("aiRemoveInput").value.trim();
+      const aiAutoEdit = document.getElementById("aiAutoEdit").checked;
+      const mobileMode = document.getElementById("mobileMode").value;
+      const subtitleLanguage = document.getElementById("subtitleLanguage").value.trim();
+      const generateSubtitles = document.getElementById("generateSubtitles").checked;
+      const burnSubtitles = document.getElementById("burnSubtitles").checked;
+      const rawTargetKeepRatio = document.getElementById("targetKeepRatio").value.trim();
+      const parsedRatio = Number(rawTargetKeepRatio);
+      const targetKeepRatio = Number.isFinite(parsedRatio) ? parsedRatio : 0.72;
+      const rawClipMax = document.getElementById("clipMaxSeconds").value.trim();
+      const rawClipMin = document.getElementById("clipMinSeconds").value.trim();
+      const parsedClipMax = Number(rawClipMax);
+      const parsedClipMin = Number(rawClipMin);
+      const clipMaxSeconds = Number.isFinite(parsedClipMax) ? parsedClipMax : 60;
+      const clipMinSeconds = Number.isFinite(parsedClipMin) ? parsedClipMin : 12;
+
+      setStatus("Starting sitcom edit task...");
+      fetch("/sitcom/edit/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_filename: sourceFilename,
+          remove_ranges: removeRanges,
+          ai_remove_query: aiRemoveQuery,
+          ai_auto_edit: aiAutoEdit,
+          target_keep_ratio: targetKeepRatio,
+          mobile_mode: mobileMode,
+          split_into_clips: true,
+          clip_max_seconds: clipMaxSeconds,
+          clip_min_seconds: clipMinSeconds,
+          subtitle_language: subtitleLanguage,
+          generate_subtitles: generateSubtitles,
+          burn_subtitles: burnSubtitles
+        })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.task_id) {
+            throw new Error(data.error || "Could not start task.");
+          }
+          setStatus(`Task started: ${data.task_id}`);
+          localStorage.setItem(SITCOM_ACTIVE_TASK_KEY, data.task_id);
+          pollTask(data.task_id);
+        })
+        .catch((err) => setStatus(`Could not start task: ${err}`));
+    });
+
+    document.getElementById("stopPollingBtn").addEventListener("click", () => {
+      stopPolling();
+      setStatus("Polling stopped.");
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadSources();
+      loadEdits();
+      const activeTaskId = localStorage.getItem(SITCOM_ACTIVE_TASK_KEY);
+      if (activeTaskId) {
+        setStatus(`Resuming task status: ${activeTaskId}`);
+        pollTask(activeTaskId);
+      }
+    });
+  </script>
+</body>
+</html>

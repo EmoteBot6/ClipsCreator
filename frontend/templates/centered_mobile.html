@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Centered Mobile Subtitles{% endblock %}
+
+{% block extra_styles %}
+{% endblock %}
+
+{% block content %}
+  <section class="card hero-card">
+    <h2 class="page-title">Centered Mobile Subtitles</h2>
+    <p class="muted">Upload one clip or paste a YouTube link, keep the full clip intact, center it inside a 9:16 phone canvas, and add AI subtitles only.</p>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <div>
+        <h2>Upload And Render</h2>
+        <p class="muted section-copy">Render a clean phone-friendly version without the full multi-clip split workflow.</p>
+      </div>
+    </div>
+    <div class="form-stack">
+      <div class="form-row">
+        <input id="centeredMobileInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" />
+        <button id="startCenteredMobileBtn" class="button button-success">Render Centered Mobile Clip</button>
+        <button
+          type="button"
+          class="button button-primary"
+          onclick="window.open('https://app.ytdown.to/en10/', '_blank', 'noopener,noreferrer')"
+        >Downloader</button>
+      </div>
+      <input
+        id="centeredMobileUrlInput"
+        class="input-wide"
+        type="text"
+        placeholder="Optional: paste a YouTube video URL instead of uploading a file"
+      />
+      <label class="checkbox-row">
+        <input id="centeredMobileTierListCheckbox" type="checkbox" />
+        <span>Add AI tier list above video</span>
+      </label>
+    </div>
+    <div id="centeredMobileStatus" class="status-box">Idle.</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <h2>Latest Render</h2>
+    </div>
+    <div id="centeredMobileLatestResult" class="muted">No centered mobile render completed yet.</div>
+  </section>
+
+  <section class="card">
+    <div class="section-header">
+      <h2>Previous Renders</h2>
+    </div>
+    <div id="centeredMobileRenderList" class="result-grid"></div>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    let centeredMobilePollingTimer = null;
+    const CENTERED_MOBILE_ACTIVE_TASK_KEY = "centeredMobileActiveTaskId";
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    function setCenteredMobileStatus(text) {
+      document.getElementById("centeredMobileStatus").textContent = text;
+    }
+
+    function stopCenteredMobilePolling() {
+      if (centeredMobilePollingTimer) {
+        clearInterval(centeredMobilePollingTimer);
+        centeredMobilePollingTimer = null;
+      }
+    }
+
+    function renderCenteredMobileResult(result) {
+      if (!result || !result.artifacts) {
+        return;
+      }
+
+      const artifacts = result.artifacts || {};
+      const previewVideo = artifacts.edited_video || artifacts.rendered_video || "";
+      const warnings = (result.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+      const tierListText = Array.isArray(result.tier_list_entries) && result.tier_list_entries.length
+        ? result.tier_list_entries.map((entry, index) => `${index + 1}. ${entry}`).join(" | ")
+        : "";
+      const sourceLabel = result.source_url || result.source_filename || "Unknown";
+
+      document.getElementById("centeredMobileLatestResult").innerHTML = `
+        <div class="result-card">
+          ${previewVideo ? `<video controls src="${escapeAttr(previewVideo)}"></video>` : ""}
+          <p class="wrap-title"><strong>${escapeHtml(result.title || result.source_filename || "Centered Mobile Render")}</strong></p>
+          <p class="muted"><strong>Source:</strong> ${escapeHtml(sourceLabel)}</p>
+          <p class="muted"><strong>Duration:</strong> ${escapeHtml(result.duration_seconds || 0)}s</p>
+          ${tierListText ? `<p class="muted"><strong>Tier List:</strong> ${escapeHtml(tierListText)}</p>` : ""}
+          ${result.description ? `<p class="muted">${escapeHtml(result.description)}</p>` : ""}
+          <div class="links">
+            ${artifacts.edited_video ? `<a class="pill-link" href="${escapeAttr(artifacts.edited_video)}" download>Subtitled Video</a>` : ""}
+            ${artifacts.rendered_video ? `<a class="pill-link" href="${escapeAttr(artifacts.rendered_video)}" download>Centered Layout</a>` : ""}
+            ${artifacts.subtitles_srt ? `<a class="pill-link" href="${escapeAttr(artifacts.subtitles_srt)}" download>SRT</a>` : ""}
+            ${artifacts.subtitles_vtt ? `<a class="pill-link" href="${escapeAttr(artifacts.subtitles_vtt)}" download>VTT</a>` : ""}
+            ${artifacts.analysis_json ? `<a class="pill-link" href="${escapeAttr(artifacts.analysis_json)}" target="_blank" rel="noopener noreferrer">Metadata JSON</a>` : ""}
+          </div>
+          ${warnings ? `<p><strong>Warnings</strong></p><ul class="muted">${warnings}</ul>` : ""}
+        </div>
+      `;
+    }
+
+    function renderCenteredMobileHistory(items) {
+      const container = document.getElementById("centeredMobileRenderList");
+      container.innerHTML = "";
+
+      if (!Array.isArray(items) || items.length === 0) {
+        container.innerHTML = "<p class='muted'>No centered mobile renders yet.</p>";
+        return;
+      }
+
+      items.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "result-card";
+        const previewVideo = item.video || item.edited_video || item.rendered_video || "";
+        const warnings = (item.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+        const tierListText = Array.isArray(item.tier_list_entries) && item.tier_list_entries.length
+          ? item.tier_list_entries.map((entry, index) => `${index + 1}. ${entry}`).join(" | ")
+          : "";
+        const sourceLabel = item.source_url || item.source_filename || "Unknown";
+        card.innerHTML = `
+          ${previewVideo ? `<video controls src="${escapeAttr(previewVideo)}"></video>` : ""}
+          <p class="wrap-title"><strong>${escapeHtml(item.title || item.source_filename || item.task_id)}</strong></p>
+          <p class="muted"><strong>Source:</strong> ${escapeHtml(sourceLabel)}</p>
+          <p class="muted"><strong>Processed:</strong> ${escapeHtml(item.processed_at_utc || "Unknown")}</p>
+          <p class="muted"><strong>Duration:</strong> ${escapeHtml(item.duration_seconds || 0)}s</p>
+          ${tierListText ? `<p class="muted"><strong>Tier List:</strong> ${escapeHtml(tierListText)}</p>` : ""}
+          ${item.description ? `<p class="muted">${escapeHtml(item.description)}</p>` : ""}
+          <div class="links">
+            ${item.edited_video ? `<a class="pill-link" href="${escapeAttr(item.edited_video)}" download>Subtitled Video</a>` : ""}
+            ${item.rendered_video ? `<a class="pill-link" href="${escapeAttr(item.rendered_video)}" download>Centered Layout</a>` : ""}
+            ${item.subtitles_srt ? `<a class="pill-link" href="${escapeAttr(item.subtitles_srt)}" download>SRT</a>` : ""}
+            ${item.subtitles_vtt ? `<a class="pill-link" href="${escapeAttr(item.subtitles_vtt)}" download>VTT</a>` : ""}
+            ${item.analysis_json ? `<a class="pill-link" href="${escapeAttr(item.analysis_json)}" target="_blank" rel="noopener noreferrer">Metadata JSON</a>` : ""}
+          </div>
+          ${warnings ? `<p><strong>Warnings</strong></p><ul class="muted">${warnings}</ul>` : ""}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function loadCenteredMobileRenders() {
+      fetch("/centered-mobile/renders")
+        .then((res) => res.json())
+        .then((items) => {
+          renderCenteredMobileHistory(items);
+        })
+        .catch((err) => {
+          document.getElementById("centeredMobileRenderList").innerHTML = `<p class="muted">Could not load renders: ${err}</p>`;
+        });
+    }
+
+    function pollCenteredMobileTask(taskId) {
+      stopCenteredMobilePolling();
+
+      const fetchStatus = () => {
+        fetch(`/centered-mobile/status/${taskId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.state === "SUCCESS") {
+              stopCenteredMobilePolling();
+              localStorage.removeItem(CENTERED_MOBILE_ACTIVE_TASK_KEY);
+              setCenteredMobileStatus("Centered mobile render complete.");
+              renderCenteredMobileResult(data.result || {});
+              loadCenteredMobileRenders();
+              return;
+            }
+
+            if (data.state === "FAILURE") {
+              stopCenteredMobilePolling();
+              localStorage.removeItem(CENTERED_MOBILE_ACTIVE_TASK_KEY);
+              const message = (data.error && data.error.message) || data.status || "Unknown error";
+              setCenteredMobileStatus(`Render failed: ${message}`);
+              return;
+            }
+
+            const progress = data.progress || {};
+            setCenteredMobileStatus(progress.message || `State: ${data.state}`);
+          })
+          .catch((err) => {
+            stopCenteredMobilePolling();
+            setCenteredMobileStatus(`Status polling failed: ${err}`);
+          });
+      };
+
+      fetchStatus();
+      centeredMobilePollingTimer = setInterval(fetchStatus, 2200);
+    }
+
+    document.getElementById("startCenteredMobileBtn").addEventListener("click", () => {
+      const fileInput = document.getElementById("centeredMobileInput");
+      const sourceUrl = document.getElementById("centeredMobileUrlInput").value.trim();
+      const hasFile = !!(fileInput.files && fileInput.files.length > 0);
+      if (!hasFile && !sourceUrl) {
+        setCenteredMobileStatus("Select a clip file or paste a YouTube URL first.");
+        return;
+      }
+
+      const formData = new FormData();
+      if (hasFile) {
+        formData.append("source_video", fileInput.files[0]);
+      }
+      formData.append("source_url", sourceUrl);
+      formData.append(
+        "tier_list_enabled",
+        document.getElementById("centeredMobileTierListCheckbox").checked ? "1" : "0"
+      );
+
+      setCenteredMobileStatus(
+        sourceUrl
+          ? "Starting YouTube download and centered mobile render..."
+          : "Uploading clip and starting centered mobile render..."
+      );
+      fetch("/centered-mobile/render", {
+        method: "POST",
+        body: formData
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.task_id) {
+            throw new Error(data.error || "Could not start centered mobile render.");
+          }
+          localStorage.setItem(CENTERED_MOBILE_ACTIVE_TASK_KEY, data.task_id);
+          setCenteredMobileStatus(`Task started: ${data.task_id}`);
+          pollCenteredMobileTask(data.task_id);
+        })
+        .catch((err) => {
+          setCenteredMobileStatus(`Could not start render: ${err}`);
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadCenteredMobileRenders();
+      const activeTaskId = localStorage.getItem(CENTERED_MOBILE_ACTIVE_TASK_KEY);
+      if (activeTaskId) {
+        setCenteredMobileStatus(`Resuming task status: ${activeTaskId}`);
+        pollCenteredMobileTask(activeTaskId);
+      }
+    });
+  </script>
+{% endblock %}

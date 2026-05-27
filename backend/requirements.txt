@@ -1,0 +1,10 @@
+flask
+flask-cors
+celery[redis]
+moviepy==1.0.3
+pillow<10
+requests
+redis
+faster-whisper
+opencv-python-headless
+yt-dlp

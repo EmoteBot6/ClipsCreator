@@ -1,0 +1,215 @@
+services:
+  backend:
+    build: ./backend
+    image: clips/backend:latest
+    container_name: clips_backend
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "League Clips Backend API"
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
+      - ollama
+    volumes:
+      - .:/workspace
+      - ./data/backend-data:/data
+      - ./data/backend-screens:/screens
+      - ./data/backend-videos:/videos
+    working_dir: /workspace/backend
+    environment:
+      FLASK_APP: app
+      FLASK_ENV: production
+      LEAGUECLIPS_TEMP_DIR: /tmp
+      LEAGUECLIPS_AI_WHISPER_MODEL: medium
+      LEAGUECLIPS_AI_DEVICE: cpu
+      LEAGUECLIPS_AI_COMPUTE_TYPE: int8
+      LEAGUECLIPS_PROGRESS_UPDATE_SECONDS: "0.75"
+      LEAGUECLIPS_YTDLP_PROGRESS_LOG_SECONDS: "10"
+      LEAGUECLIPS_YTDLP_SOCKET_TIMEOUT_SECONDS: "90"
+      LEAGUECLIPS_YTDLP_RETRIES: "15"
+      LEAGUECLIPS_YTDLP_FRAGMENT_RETRIES: "20"
+      LEAGUECLIPS_YTDLP_DOWNLOAD_ATTEMPTS: "3"
+      LEAGUECLIPS_YTDLP_HTTP_CHUNK_SIZE_MB: "16"
+      LEAGUECLIPS_OLLAMA_TIMEOUT_SECONDS: "90"
+      LEAGUECLIPS_OLLAMA_SPLIT_MARKERS_ENABLED: "true"
+      LEAGUECLIPS_OLLAMA_HOST: http://ollama:11434
+      LEAGUECLIPS_OLLAMA_MODEL: qwen2.5:7b-instruct
+      LEAGUECLIPS_AUTO_SYNAPSE_ENABLED: "true"
+      LEAGUECLIPS_AUTO_SYNAPSE_AUTO_SUBTITLES: "true"
+      LEAGUECLIPS_AUTO_SYNAPSE_POLL_SECONDS: "43200"
+      LEAGUECLIPS_AUTO_SYNAPSE_FEED_LIMIT: "10"
+      LEAGUECLIPS_AUTO_SYNAPSE_LOCK_TTL_SECONDS: "1800"
+      LEAGUECLIPS_AUTO_SYNAPSE_STALE_LOCK_SECONDS: "900"
+      LEAGUECLIPS_AUTO_SYNAPSE_TASK_STALE_SECONDS: "86400"
+      LEAGUECLIPS_AUTO_SYNAPSE_MAX_VIDEO_FAILURES: "2"
+      HOME: /data
+      XDG_CACHE_HOME: /data/.cache
+      HF_HOME: /data/.cache/huggingface
+      TRANSFORMERS_CACHE: /data/.cache/huggingface
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  celery:
+    build: ./backend
+    image: clips/celery-worker:latest
+    container_name: clips_celery_worker
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "League Clips Celery Worker"
+    command: celery -A app.tasks worker --loglevel=info
+    depends_on:
+      - redis
+      - ollama
+    volumes:
+      - .:/workspace
+      - ./data/backend-data:/data
+      - ./data/backend-screens:/screens
+      - ./data/backend-videos:/videos
+    working_dir: /workspace/backend
+    environment:
+      LEAGUECLIPS_TEMP_DIR: /tmp
+      LEAGUECLIPS_AI_WHISPER_MODEL: medium
+      LEAGUECLIPS_AI_DEVICE: cpu
+      LEAGUECLIPS_AI_COMPUTE_TYPE: int8
+      LEAGUECLIPS_PROGRESS_UPDATE_SECONDS: "0.75"
+      LEAGUECLIPS_OLLAMA_TIMEOUT_SECONDS: "90"
+      LEAGUECLIPS_OLLAMA_SPLIT_MARKERS_ENABLED: "true"
+      LEAGUECLIPS_OLLAMA_HOST: http://ollama:11434
+      LEAGUECLIPS_OLLAMA_MODEL: qwen2.5:7b-instruct
+      HOME: /data
+      XDG_CACHE_HOME: /data/.cache
+      HF_HOME: /data/.cache/huggingface
+      TRANSFORMERS_CACHE: /data/.cache/huggingface
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build: ./frontend
+    image: clips/frontend:latest
+    container_name: clips_frontend
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "League Clips Frontend UI"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend_sitcom:
+    build: ./frontend_sitcom
+    image: clips/frontend-sitcom:latest
+    container_name: clips_frontend_sitcom
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "League Clips Sitcom Editor UI"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/frontend_sitcom
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: clips_redis
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "Redis Cache"
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: clips_ollama
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "Ollama Local LLM"
+    ports:
+      - "${OLLAMA_HOST_PORT:-12434}:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: leagueclips_net

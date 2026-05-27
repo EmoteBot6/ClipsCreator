@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Project workspace
+*.code-workspace
+.vscode/
+.idea/
+.git-private-history-backup*/
+
+# Local runtime/generated media
+backend/app/videos/
+backend/videos/
+backend/screens/
+videos/
+screens/
+data/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+
+# MoviePy / temp artifacts
+backend/*TEMP_MPY_wvf_snd.mp4
+*TEMP_MPY_wvf_snd.mp4
+*.tmp
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Logs and local caches
+*.log
+logs/
