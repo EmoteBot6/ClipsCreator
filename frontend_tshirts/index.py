@@ -26,8 +26,10 @@ STATUS_PATH = DATA_DIR / "status.json"
 OLLAMA_HOST = os.getenv("TSHIRT_OLLAMA_HOST", "http://ollama:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("TSHIRT_OLLAMA_MODEL", "qwen2.5:7b-instruct")
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("TSHIRT_OLLAMA_TIMEOUT_SECONDS", "120"))
+OLLAMA_NUM_PREDICT = max(1024, int(os.getenv("TSHIRT_OLLAMA_NUM_PREDICT", "6500")))
+OLLAMA_TEMPERATURE = float(os.getenv("TSHIRT_OLLAMA_TEMPERATURE", "0.85"))
 GENERATE_INTERVAL_SECONDS = max(60, int(os.getenv("TSHIRT_GENERATE_INTERVAL_SECONDS", "3600")))
-IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "ollama_svg").strip().lower()
+IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "pollinations").strip().lower()
 POLLINATIONS_MODEL = os.getenv("TSHIRT_POLLINATIONS_MODEL", "flux")
 MAX_DESIGNS = max(1, int(os.getenv("TSHIRT_MAX_DESIGNS", "80")))
 IMAGE_SIZE = max(768, int(os.getenv("TSHIRT_IMAGE_SIZE", "2048")))
@@ -169,15 +171,22 @@ def normalize_ollama_payload(text):
 
 def ask_ollama_for_design():
     prompt = f"""
-Create one original print-ready T-shirt design concept.
+Create one original print-ready T-shirt design concept as a senior apparel graphic designer.
 Return only a JSON object, with no Markdown.
 
 The JSON must have:
 - title: 3 to 8 words
-- prompt: a detailed image-generation prompt for a premium T-shirt graphic
+- prompt: a detailed text-to-image prompt for a premium T-shirt print graphic
 - palette: 3 to 6 hex colors
 - tags: 3 to 7 short lowercase tags
 - svg: optional complete self-contained SVG illustration for the shirt front
+
+Design direction:
+- create a distinctive central graphic, not a generic logo
+- prioritize bold silhouettes, strong composition, crisp edges, and screen-printable contrast
+- include style, subject, composition, texture, color palette, and print constraints in the prompt
+- avoid mockups, blank shirts, models, hangers, storefront photos, watermarks, copyrighted characters, brand names, and team logos
+- keep words out of the artwork unless they are short and generic
 
 SVG rules:
 - viewBox must be 0 0 2048 2048
@@ -194,8 +203,9 @@ SVG rules:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.9,
-                "num_predict": 4200,
+                "temperature": OLLAMA_TEMPERATURE,
+                "num_predict": OLLAMA_NUM_PREDICT,
+                "top_p": 0.92,
             },
         },
         timeout=OLLAMA_TIMEOUT_SECONDS,
@@ -460,8 +470,10 @@ def generate_pollinations_image(brief, target_path):
     seed_source = f"{prompt}-{time.time()}".encode("utf-8")
     seed = int(hashlib.sha256(seed_source).hexdigest()[:8], 16)
     full_prompt = (
-        f"{prompt}, transparent background, no mockup, no shirt model, no watermark, "
-        "centered isolated print graphic, high detail, commercial t-shirt art"
+        f"{prompt}, award winning apparel illustration, isolated centered t-shirt print artwork, "
+        "transparent or plain background, no shirt mockup, no blank shirt, no person, no hanger, "
+        "no watermark, no brand logo, no copyrighted character, crisp vector-like edges, bold silhouette, "
+        "screen print friendly, premium streetwear graphic, high detail, high contrast, print ready"
     )
     url = (
         "https://image.pollinations.ai/prompt/"

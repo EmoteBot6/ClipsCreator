@@ -53,7 +53,9 @@ Common values to change:
 - `LEAGUECLIPS_AI_WHISPER_MODEL`: Whisper model size.
 - `LEAGUECLIPS_AI_DEVICE`: `cpu` or a supported accelerator setup.
 - `OLLAMA_HOST_PORT`: host port for the Ollama service.
-- `TSHIRT_IMAGE_PROVIDER`: `ollama_svg` by default, which asks Ollama for a print-ready SVG. Use `prompt_card` for local generated PNG cards, or `pollinations` for a no-key external raster image attempt.
+- `TSHIRT_IMAGE_PROVIDER`: `pollinations` by default, which uses Ollama for a design brief and a no-key external image endpoint for the raster image. Use `ollama_svg` for fully local but simpler SVG output, or `prompt_card` for local generated PNG cards.
+- `TSHIRT_OLLAMA_NUM_PREDICT`: token budget for the design brief, default `6500`.
+- `TSHIRT_OLLAMA_TEMPERATURE`: design brief creativity, default `0.85`.
 - `TSHIRT_GENERATE_INTERVAL_SECONDS`: schedule for the T-shirt generator, default `3600`.
 - `TSHIRT_FRONTEND_PORT`: host port for the T-shirt design UI, default `3002`.
 
