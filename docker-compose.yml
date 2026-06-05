@@ -183,15 +183,58 @@ services:
       - "${TSHIRT_FRONTEND_PORT:-3002}:3002"
     depends_on:
       - ollama
+      - image_generator
     environment:
       TSHIRT_OLLAMA_HOST: http://ollama:11434
       TSHIRT_OLLAMA_MODEL: ${TSHIRT_OLLAMA_MODEL:-qwen2.5:7b-instruct}
       TSHIRT_OLLAMA_NUM_PREDICT: ${TSHIRT_OLLAMA_NUM_PREDICT:-6500}
       TSHIRT_OLLAMA_TEMPERATURE: ${TSHIRT_OLLAMA_TEMPERATURE:-0.85}
       TSHIRT_GENERATE_INTERVAL_SECONDS: ${TSHIRT_GENERATE_INTERVAL_SECONDS:-3600}
-      TSHIRT_IMAGE_PROVIDER: ${TSHIRT_IMAGE_PROVIDER:-pollinations}
+      TSHIRT_IMAGE_PROVIDER: ${TSHIRT_IMAGE_PROVIDER:-local_diffusion}
+      TSHIRT_LOCAL_IMAGE_HOST: http://image_generator:7860
+      TSHIRT_LOCAL_IMAGE_SIZE: ${TSHIRT_LOCAL_IMAGE_SIZE:-1024}
+      TSHIRT_LOCAL_IMAGE_STEPS: ${TSHIRT_LOCAL_IMAGE_STEPS:-28}
+      TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE: ${TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE:-7.0}
+      TSHIRT_LOCAL_IMAGE_TIMEOUT_SECONDS: ${TSHIRT_LOCAL_IMAGE_TIMEOUT_SECONDS:-3600}
+      TSHIRT_POLLINATIONS_API_KEY: ${TSHIRT_POLLINATIONS_API_KEY:-}
+      TSHIRT_POLLINATIONS_MODEL: ${TSHIRT_POLLINATIONS_MODEL:-flux}
       TSHIRT_IMAGE_SIZE: ${TSHIRT_IMAGE_SIZE:-2048}
       TSHIRT_MAX_DESIGNS: ${TSHIRT_MAX_DESIGNS:-80}
+      HOME: /data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  image_generator:
+    build: ./image_generator
+    image: clips/image-generator:latest
+    container_name: clips_image_generator
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "Local Diffusion Image Generator"
+    ports:
+      - "${IMAGEGEN_HOST_PORT:-7860}:7860"
+    volumes:
+      - ./data/image-generator:/data
+    environment:
+      IMAGEGEN_MODEL: ${IMAGEGEN_MODEL:-stabilityai/stable-diffusion-xl-base-1.0}
+      IMAGEGEN_DEVICE: ${IMAGEGEN_DEVICE:-auto}
+      IMAGEGEN_DTYPE: ${IMAGEGEN_DTYPE:-auto}
+      IMAGEGEN_WIDTH: ${IMAGEGEN_WIDTH:-1024}
+      IMAGEGEN_HEIGHT: ${IMAGEGEN_HEIGHT:-1024}
+      IMAGEGEN_STEPS: ${IMAGEGEN_STEPS:-28}
+      IMAGEGEN_GUIDANCE_SCALE: ${IMAGEGEN_GUIDANCE_SCALE:-7.0}
+      IMAGEGEN_MODEL_CPU_OFFLOAD: ${IMAGEGEN_MODEL_CPU_OFFLOAD:-true}
       HOME: /data
     read_only: true
     tmpfs:

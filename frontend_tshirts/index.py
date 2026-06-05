@@ -29,7 +29,14 @@ OLLAMA_TIMEOUT_SECONDS = int(os.getenv("TSHIRT_OLLAMA_TIMEOUT_SECONDS", "120"))
 OLLAMA_NUM_PREDICT = max(1024, int(os.getenv("TSHIRT_OLLAMA_NUM_PREDICT", "6500")))
 OLLAMA_TEMPERATURE = float(os.getenv("TSHIRT_OLLAMA_TEMPERATURE", "0.85"))
 GENERATE_INTERVAL_SECONDS = max(60, int(os.getenv("TSHIRT_GENERATE_INTERVAL_SECONDS", "3600")))
-IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "pollinations").strip().lower()
+IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "local_diffusion").strip().lower()
+LOCAL_IMAGE_HOST = os.getenv("TSHIRT_LOCAL_IMAGE_HOST", "http://image_generator:7860").rstrip("/")
+LOCAL_IMAGE_TIMEOUT_SECONDS = int(os.getenv("TSHIRT_LOCAL_IMAGE_TIMEOUT_SECONDS", "3600"))
+LOCAL_IMAGE_SIZE = max(512, int(os.getenv("TSHIRT_LOCAL_IMAGE_SIZE", "1024")))
+LOCAL_IMAGE_STEPS = max(1, int(os.getenv("TSHIRT_LOCAL_IMAGE_STEPS", "28")))
+LOCAL_IMAGE_GUIDANCE_SCALE = float(os.getenv("TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE", "7.0"))
+POLLINATIONS_API_KEY = os.getenv("TSHIRT_POLLINATIONS_API_KEY", "").strip()
+POLLINATIONS_BASE_URL = os.getenv("TSHIRT_POLLINATIONS_BASE_URL", "https://gen.pollinations.ai").rstrip("/")
 POLLINATIONS_MODEL = os.getenv("TSHIRT_POLLINATIONS_MODEL", "flux")
 MAX_DESIGNS = max(1, int(os.getenv("TSHIRT_MAX_DESIGNS", "80")))
 IMAGE_SIZE = max(768, int(os.getenv("TSHIRT_IMAGE_SIZE", "2048")))
@@ -464,6 +471,11 @@ def render_prompt_card(brief, target_path):
 
 
 def generate_pollinations_image(brief, target_path):
+    if not POLLINATIONS_API_KEY:
+        raise RuntimeError(
+            "Pollinations now requires an API key with available Pollen. "
+            "Set TSHIRT_POLLINATIONS_API_KEY or use TSHIRT_IMAGE_PROVIDER=ollama_svg."
+        )
     prompt = str(brief.get("prompt") or "").strip()
     if not prompt:
         raise RuntimeError("The generated brief did not include an image prompt.")
@@ -476,15 +488,82 @@ def generate_pollinations_image(brief, target_path):
         "screen print friendly, premium streetwear graphic, high detail, high contrast, print ready"
     )
     url = (
-        "https://image.pollinations.ai/prompt/"
+        f"{POLLINATIONS_BASE_URL}/image/"
         f"{quote(full_prompt, safe='')}?width={IMAGE_SIZE}&height={IMAGE_SIZE}"
-        f"&seed={seed}&model={quote(POLLINATIONS_MODEL, safe='')}&nologo=true&private=true"
+        f"&seed={seed}&model={quote(POLLINATIONS_MODEL, safe='')}&enhance=true"
     )
-    response = requests.get(url, timeout=180)
-    response.raise_for_status()
+    response = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {POLLINATIONS_API_KEY}"},
+        timeout=300,
+    )
+    if response.status_code >= 400:
+        details = response.text.strip()
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                error = parsed.get("error")
+                if isinstance(error, dict) and error.get("message"):
+                    details = str(error["message"])
+                elif error:
+                    details = str(error)
+        except ValueError:
+            pass
+        if response.status_code == 402:
+            details = details or "Insufficient Pollen balance or API key budget exhausted."
+        if len(details) > 500:
+            details = details[:500]
+        raise RuntimeError(f"Pollinations request failed ({response.status_code}): {details}")
     content_type = response.headers.get("Content-Type", "")
     if "image" not in content_type.lower():
         raise RuntimeError("Image provider did not return an image.")
+    target_path.write_bytes(response.content)
+
+
+def generate_local_diffusion_image(brief, target_path):
+    prompt = str(brief.get("prompt") or "").strip()
+    if not prompt:
+        raise RuntimeError("The generated brief did not include an image prompt.")
+    seed_source = f"{prompt}-{time.time()}".encode("utf-8")
+    seed = int(hashlib.sha256(seed_source).hexdigest()[:8], 16)
+    full_prompt = (
+        f"{prompt}, award winning apparel illustration, isolated centered t-shirt print artwork, "
+        "transparent or plain background, no shirt mockup, no blank shirt, no person, no hanger, "
+        "no watermark, no brand logo, no copyrighted character, crisp vector-like edges, bold silhouette, "
+        "screen print friendly, premium streetwear graphic, high detail, high contrast, print ready"
+    )
+    negative_prompt = (
+        "shirt mockup, blank shirt, person, model, mannequin, hanger, watermark, signature, logo, "
+        "copyrighted character, brand name, blurry, low contrast, muddy colors, photorealistic clothing photo, "
+        "cropped artwork, extra text, misspelled text"
+    )
+    response = requests.post(
+        f"{LOCAL_IMAGE_HOST}/api/generate",
+        json={
+            "prompt": full_prompt,
+            "negative_prompt": negative_prompt,
+            "width": LOCAL_IMAGE_SIZE,
+            "height": LOCAL_IMAGE_SIZE,
+            "steps": LOCAL_IMAGE_STEPS,
+            "guidance_scale": LOCAL_IMAGE_GUIDANCE_SCALE,
+            "seed": seed,
+        },
+        timeout=LOCAL_IMAGE_TIMEOUT_SECONDS,
+    )
+    if response.status_code >= 400:
+        details = response.text.strip()
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                details = parsed.get("details") or parsed.get("error") or details
+        except ValueError:
+            pass
+        if len(str(details)) > 500:
+            details = str(details)[:500]
+        raise RuntimeError(f"Local image generator failed ({response.status_code}): {details}")
+    content_type = response.headers.get("Content-Type", "")
+    if "image" not in content_type.lower():
+        raise RuntimeError("Local image generator did not return an image.")
     target_path.write_bytes(response.content)
 
 
@@ -541,6 +620,8 @@ def generate_design(trigger="scheduled"):
         try:
             if provider == "pollinations":
                 generate_pollinations_image(brief, design_dir / filename)
+            elif provider == "local_diffusion":
+                generate_local_diffusion_image(brief, design_dir / filename)
             elif provider == "prompt_card":
                 render_prompt_card(brief, design_dir / filename)
             else:

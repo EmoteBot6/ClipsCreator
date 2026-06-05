@@ -1,0 +1,10 @@
+accelerate
+diffusers
+flask
+pillow
+protobuf
+requests
+safetensors
+sentencepiece
+torch
+transformers
