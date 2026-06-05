@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import os
 import random
@@ -176,7 +177,7 @@ The JSON must have:
 - prompt: a detailed image-generation prompt for a premium T-shirt graphic
 - palette: 3 to 6 hex colors
 - tags: 3 to 7 short lowercase tags
-- svg: a complete self-contained SVG illustration for the shirt front
+- svg: optional complete self-contained SVG illustration for the shirt front
 
 SVG rules:
 - viewBox must be 0 0 2048 2048
@@ -258,6 +259,91 @@ def sanitize_svg(svg):
     if "viewBox" not in svg[:500]:
         svg = re.sub(r"<svg\b", '<svg viewBox="0 0 2048 2048"', svg, count=1, flags=re.IGNORECASE)
     return svg
+
+
+def normalized_palette(brief):
+    colors = [
+        str(color).strip()
+        for color in brief.get("palette") or []
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(color).strip())
+    ]
+    defaults = ["#f8fafc", "#111827", "#14b8a6", "#f59e0b", "#ef4444"]
+    while len(colors) < 5:
+        colors.append(defaults[len(colors)])
+    return colors[:5]
+
+
+def generated_svg_from_brief(brief):
+    palette = normalized_palette(brief)
+    title = str(brief.get("title") or "T-Shirt Design").strip()[:44] or "T-Shirt Design"
+    prompt = str(brief.get("prompt") or title).strip()
+    tags = [
+        re.sub(r"[^a-z0-9 -]", "", str(tag).lower()).strip()
+        for tag in (brief.get("tags") or [])
+    ]
+    tags = [tag for tag in tags if tag][:4] or ["print", "vector", "shirt"]
+    seed = int(hashlib.sha256(f"{title}-{prompt}".encode("utf-8")).hexdigest()[:8], 16)
+    variant = seed % 4
+    angle = 18 + (seed % 18)
+    title_xml = html.escape(title.upper())
+    tag_xml = html.escape(" / ".join(tags).upper())
+
+    p0, p1, p2, p3, p4 = palette
+    motif = ""
+    if variant == 0:
+        motif = f"""
+  <g transform="translate(1024 910)">
+    <circle r="520" fill="none" stroke="{p1}" stroke-width="42"/>
+    <circle r="385" fill="{p0}" stroke="{p2}" stroke-width="30"/>
+    <path d="M0 -560 L92 -176 L480 -300 L206 28 L430 380 L0 220 L-430 380 L-206 28 L-480 -300 L-92 -176 Z" fill="{p2}"/>
+    <circle r="164" fill="{p3}"/>
+    <circle r="76" fill="{p1}"/>
+  </g>
+"""
+    elif variant == 1:
+        motif = f"""
+  <g transform="translate(1024 900) rotate(-{angle})">
+    <path d="M-420 -500 C-120 -650 190 -600 440 -340 C210 -270 106 -156 62 0 C260 -80 442 -18 560 160 C292 190 160 304 116 526 C-100 334 -292 284 -562 332 C-410 120 -386 -80 -420 -500 Z" fill="{p2}" stroke="{p1}" stroke-width="34" stroke-linejoin="round"/>
+    <path d="M-250 -280 C-46 -360 190 -312 332 -154 C112 -126 -12 -10 -82 186" fill="none" stroke="{p0}" stroke-width="42" stroke-linecap="round"/>
+    <path d="M-112 310 C40 210 168 194 316 250" fill="none" stroke="{p3}" stroke-width="38" stroke-linecap="round"/>
+  </g>
+"""
+    elif variant == 2:
+        motif = f"""
+  <g transform="translate(1024 900)">
+    <path d="M-610 36 C-420 -240 -220 -380 0 -380 C220 -380 420 -240 610 36 C418 282 220 404 0 404 C-220 404 -418 282 -610 36 Z" fill="{p1}"/>
+    <path d="M-460 40 C-290 -140 -142 -224 0 -224 C142 -224 290 -140 460 40 C288 182 138 250 0 250 C-138 250 -288 182 -460 40 Z" fill="{p0}"/>
+    <circle r="176" fill="{p2}"/>
+    <path d="M-760 -210 L-560 -150 M560 -150 L760 -210 M-760 270 L-560 196 M560 196 L760 270" stroke="{p3}" stroke-width="44" stroke-linecap="round"/>
+  </g>
+"""
+    else:
+        motif = f"""
+  <g transform="translate(1024 900)">
+    <rect x="-410" y="-410" width="820" height="820" rx="118" fill="{p1}" transform="rotate(45)"/>
+    <rect x="-300" y="-300" width="600" height="600" rx="86" fill="{p0}" transform="rotate(45)"/>
+    <path d="M-72 -418 L256 -72 L72 -72 L72 418 L-256 72 L-72 72 Z" fill="{p2}" stroke="{p1}" stroke-width="24" stroke-linejoin="round"/>
+    <circle cx="-310" cy="-310" r="74" fill="{p3}"/>
+    <circle cx="310" cy="310" r="74" fill="{p4}"/>
+  </g>
+"""
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048">
+  <desc>{html.escape(prompt[:420])}</desc>
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000000" flood-opacity="0.20"/>
+    </filter>
+  </defs>
+  <g filter="url(#softShadow)">
+    <path d="M1024 150 C1362 150 1628 346 1744 648 C1864 960 1750 1292 1484 1500 C1254 1680 832 1680 602 1500 C256 1228 218 734 448 438 C570 280 780 150 1024 150 Z" fill="{p0}" opacity="0.96"/>
+    <path d="M408 1398 C674 1520 1288 1520 1554 1398" fill="none" stroke="{p1}" stroke-width="44" stroke-linecap="round"/>
+{motif}
+    <text x="1024" y="1698" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="900" fill="{p1}">{title_xml}</text>
+    <text x="1024" y="1792" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" letter-spacing="8" fill="{p2}">{tag_xml}</text>
+  </g>
+</svg>
+"""
 
 
 def wrap_text(draw, text, font, max_width):
@@ -381,7 +467,7 @@ def generate_pollinations_image(brief, target_path):
 def create_svg_file(brief, target_path):
     svg = sanitize_svg(brief.get("svg", ""))
     if not svg:
-        raise RuntimeError("Ollama did not return a usable SVG.")
+        svg = generated_svg_from_brief(brief)
     target_path.write_text(svg, encoding="utf-8")
 
 
