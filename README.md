@@ -57,6 +57,12 @@ Common values to change:
 - `TSHIRT_GENERATE_INTERVAL_SECONDS`: schedule for the T-shirt generator, default `3600`.
 - `TSHIRT_FRONTEND_PORT`: host port for the T-shirt design UI, default `3002`.
 
+The T-shirt generator uses `TSHIRT_OLLAMA_MODEL`, default `qwen2.5:7b-instruct`. Pull that model in the Ollama container before expecting AI briefs:
+
+```powershell
+docker exec clips_ollama ollama pull qwen2.5:7b-instruct
+```
+
 For server/CasaOS-style installs, `compose.casa.yml` defaults runtime data to `/DATA/AppData/ClipsCreator/...` and supports `LEAGUECLIPS_SOURCE_DIR` for pointing builds at a local clone. You can override the data root with `CLIPSCREATOR_APPDATA_DIR`.
 
 ## Public Repo Hygiene

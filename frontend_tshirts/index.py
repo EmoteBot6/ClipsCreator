@@ -200,7 +200,19 @@ SVG rules:
         },
         timeout=OLLAMA_TIMEOUT_SECONDS,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        details = response.text.strip()
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict) and parsed.get("error"):
+                details = str(parsed["error"])
+        except ValueError:
+            pass
+        if len(details) > 500:
+            details = details[:500]
+        raise RuntimeError(
+            f"Ollama request failed ({response.status_code}) for model {OLLAMA_MODEL}: {details}"
+        )
     payload = response.json()
     return normalize_ollama_payload(payload.get("response", ""))
 
