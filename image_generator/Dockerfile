@@ -12,6 +12,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --home-dir /data --shell /usr/sbin/nologin app \
+    && mkdir -p /data \
+    && chown -R 1000:1000 /data
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
