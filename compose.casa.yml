@@ -133,6 +133,33 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  frontend_tshirts:
+    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/frontend_tshirts
+    container_name: clips_frontend_tshirts
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      - ollama
+    ports:
+      - "${TSHIRT_FRONTEND_PORT:-3002}:3002"                   # nur intern, Proxy published
+    environment:
+      TSHIRT_OLLAMA_HOST: http://ollama:11434
+      TSHIRT_OLLAMA_MODEL: ${TSHIRT_OLLAMA_MODEL:-qwen2.5:7b-instruct}
+      TSHIRT_GENERATE_INTERVAL_SECONDS: ${TSHIRT_GENERATE_INTERVAL_SECONDS:-3600}
+      TSHIRT_IMAGE_PROVIDER: ${TSHIRT_IMAGE_PROVIDER:-ollama_svg}
+      TSHIRT_IMAGE_SIZE: ${TSHIRT_IMAGE_SIZE:-2048}
+      TSHIRT_MAX_DESIGNS: ${TSHIRT_MAX_DESIGNS:-80}
+      HOME: /data
+    volumes:
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/tshirt-designer:/data
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   redis:
     image: redis:7-alpine
     container_name: clips_redis

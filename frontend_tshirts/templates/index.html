@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>T-Shirt Design Queue</title>
+  <style>
+    :root {
+      --bg: #eef2f4;
+      --panel: #ffffff;
+      --panel-soft: #f7faf9;
+      --text: #1d2528;
+      --muted: #637277;
+      --border: #d6e0e2;
+      --primary: #0f766e;
+      --primary-hover: #115e59;
+      --success: #166534;
+      --danger: #b42318;
+      --danger-hover: #8f1d15;
+      --ink: #111827;
+      --amber: #d97706;
+      --shadow: 0 12px 28px rgba(20, 35, 40, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Aptos", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 85% 0%, rgba(217, 119, 6, 0.13), transparent 32%),
+        linear-gradient(135deg, #eef2f4, #dfe9e7);
+    }
+
+    .shell {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .topbar,
+    .card,
+    .design-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 18px;
+      margin-bottom: 16px;
+      color: #f8fafc;
+      background: linear-gradient(135deg, #172426, #26353a);
+    }
+
+    h1,
+    h2,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: 1.45rem;
+      line-height: 1.2;
+    }
+
+    h2 {
+      margin-bottom: 6px;
+      font-size: 1.15rem;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .topbar .muted {
+      color: #b9c6c8;
+      margin-bottom: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .button,
+    .download-link {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      color: #fff;
+      background: var(--primary);
+      transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .button:hover,
+    .download-link:hover {
+      transform: translateY(-1px);
+      background: var(--primary-hover);
+    }
+
+    .button-danger {
+      background: var(--danger);
+    }
+
+    .button-danger:hover {
+      background: var(--danger-hover);
+    }
+
+    .download-link {
+      background: var(--success);
+    }
+
+    .button[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .card {
+      margin-bottom: 16px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .status-item {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      min-height: 72px;
+    }
+
+    .status-item strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+    }
+
+    .design-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .design-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      background: var(--panel);
+      min-width: 0;
+    }
+
+    .preview {
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background-color: #f8fafc;
+      background-image:
+        linear-gradient(45deg, #dce5e8 25%, transparent 25%),
+        linear-gradient(-45deg, #dce5e8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #dce5e8 75%),
+        linear-gradient(-45deg, transparent 75%, #dce5e8 75%);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+    }
+
+    .preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .prompt {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #eef7f5;
+      color: var(--primary);
+      border: 1px solid #cbe3df;
+    }
+
+    .badge-fallback {
+      color: var(--amber);
+      background: #fff7ed;
+      border-color: #fed7aa;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        padding: 14px;
+      }
+
+      .topbar,
+      .toolbar,
+      .button,
+      .download-link {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <h1>T-Shirt Design Queue</h1>
+        <p class="muted">Hourly AI-generated shirt artwork</p>
+      </div>
+      <div class="toolbar">
+        <button id="generateButton" class="button" type="button">Generate Now</button>
+        <button id="refreshButton" class="button" type="button">Refresh</button>
+        <button id="deleteAllButton" class="button button-danger" type="button">Delete All</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Status</h2>
+      <p id="message" class="muted">Loading...</p>
+      <div class="status-grid">
+        <div class="status-item">
+          <strong>State</strong>
+          <span id="stateValue">Loading</span>
+        </div>
+        <div class="status-item">
+          <strong>Next Attempt</strong>
+          <span id="nextValue">Loading</span>
+        </div>
+        <div class="status-item">
+          <strong>Provider</strong>
+          <span id="providerValue">Loading</span>
+        </div>
+        <div class="status-item">
+          <strong>Saved</strong>
+          <span id="countValue">0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Generated Designs</h2>
+      <div id="designGrid" class="design-grid"></div>
+    </section>
+  </div>
+
+  <script>
+    const grid = document.getElementById("designGrid");
+    const generateButton = document.getElementById("generateButton");
+    const refreshButton = document.getElementById("refreshButton");
+    const deleteAllButton = document.getElementById("deleteAllButton");
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "Not scheduled";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleString();
+    }
+
+    function readJson(res) {
+      return res.text().then((text) => {
+        let data = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (err) {
+            throw new Error(`Invalid JSON (${res.status})`);
+          }
+        }
+        if (!res.ok) {
+          throw new Error(data.error || data.status || `Request failed (${res.status})`);
+        }
+        return data;
+      });
+    }
+
+    function renderStatus(status) {
+      document.getElementById("message").textContent = status.last_error
+        ? `${status.current_message || "Idle"} Last error: ${status.last_error}`
+        : (status.current_message || "Idle");
+      document.getElementById("stateValue").textContent = status.is_running ? "Generating" : "Idle";
+      document.getElementById("nextValue").textContent = formatDate(status.next_attempt_at_utc);
+      document.getElementById("providerValue").textContent = `${status.provider || "unknown"} / ${status.model || ""}`;
+      document.getElementById("countValue").textContent = status.count || 0;
+      generateButton.disabled = !!status.is_running;
+    }
+
+    function renderDesigns(designs) {
+      deleteAllButton.disabled = !designs.length;
+      if (!designs.length) {
+        grid.innerHTML = "<p class='muted'>No designs yet.</p>";
+        return;
+      }
+
+      grid.innerHTML = designs.map((design) => {
+        const statusClass = design.status === "fallback" ? "badge badge-fallback" : "badge";
+        const tags = Array.isArray(design.tags) ? design.tags.slice(0, 4) : [];
+        const tagHtml = tags.map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("");
+        const warning = design.error || design.ollama_warning || "";
+        return `
+          <article class="design-card" data-id="${escapeAttr(design.id)}">
+            <a class="preview" href="${escapeAttr(design.download_url || design.url)}" target="_blank" rel="noopener">
+              <img src="${escapeAttr(design.url)}" alt="${escapeAttr(design.title || "T-shirt design")}" loading="lazy" />
+            </a>
+            <h3 class="card-title">${escapeHtml(design.title || "T-Shirt Design")}</h3>
+            <div class="meta">
+              <span class="${statusClass}">${escapeHtml(design.status || "generated")}</span>
+              <span class="badge">${escapeHtml(design.provider || "provider")}</span>
+              ${tagHtml}
+            </div>
+            <p class="prompt">${escapeHtml(design.prompt || "")}</p>
+            <p class="prompt">${escapeHtml(formatDate(design.created_at_utc))}${warning ? ` - ${escapeHtml(warning)}` : ""}</p>
+            <div class="card-actions">
+              <a class="download-link" href="${escapeAttr(design.download_url || design.url)}" download>Download</a>
+              <button class="button button-danger delete-button" type="button">Delete</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function loadStatus() {
+      return fetch("/api/status")
+        .then(readJson)
+        .then(renderStatus)
+        .catch((err) => {
+          document.getElementById("message").textContent = `Could not load status: ${err}`;
+        });
+    }
+
+    function loadDesigns() {
+      return fetch("/api/designs")
+        .then(readJson)
+        .then(renderDesigns)
+        .catch((err) => {
+          grid.innerHTML = `<p class="muted">Could not load designs: ${escapeHtml(err)}</p>`;
+        });
+    }
+
+    function refreshAll() {
+      loadStatus();
+      loadDesigns();
+    }
+
+    generateButton.addEventListener("click", () => {
+      generateButton.disabled = true;
+      fetch("/api/generate-now", { method: "POST" })
+        .then(readJson)
+        .then(() => {
+          document.getElementById("message").textContent = "Generation queued.";
+          setTimeout(refreshAll, 1200);
+        })
+        .catch((err) => {
+          document.getElementById("message").textContent = `Could not queue generation: ${err}`;
+          generateButton.disabled = false;
+        });
+    });
+
+    refreshButton.addEventListener("click", refreshAll);
+
+    deleteAllButton.addEventListener("click", () => {
+      if (!confirm("Delete all generated T-shirt designs?")) return;
+      deleteAllButton.disabled = true;
+      fetch("/api/designs", { method: "DELETE" })
+        .then(readJson)
+        .then(refreshAll)
+        .catch((err) => {
+          document.getElementById("message").textContent = `Delete failed: ${err}`;
+          refreshAll();
+        });
+    });
+
+    grid.addEventListener("click", (event) => {
+      const button = event.target.closest(".delete-button");
+      if (!button) return;
+      const card = button.closest(".design-card");
+      const designId = card ? card.getAttribute("data-id") : "";
+      if (!designId) return;
+      if (!confirm("Delete this T-shirt design?")) return;
+      button.disabled = true;
+      fetch(`/api/designs/${encodeURIComponent(designId)}`, { method: "DELETE" })
+        .then(readJson)
+        .then(refreshAll)
+        .catch((err) => {
+          document.getElementById("message").textContent = `Delete failed: ${err}`;
+          refreshAll();
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      refreshAll();
+      setInterval(refreshAll, 15000);
+    });
+  </script>
+</body>
+</html>

@@ -167,6 +167,43 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  frontend_tshirts:
+    build: ./frontend_tshirts
+    image: clips/frontend-tshirts:latest
+    container_name: clips_frontend_tshirts
+    restart: unless-stopped
+    user: "1000:1000"
+    labels:
+      org.opencontainers.image.title: "T-Shirt Design Queue UI"
+    volumes:
+      - .:/workspace
+      - ./data/tshirt-designer:/data
+    working_dir: /workspace/frontend_tshirts
+    ports:
+      - "${TSHIRT_FRONTEND_PORT:-3002}:3002"
+    depends_on:
+      - ollama
+    environment:
+      TSHIRT_OLLAMA_HOST: http://ollama:11434
+      TSHIRT_OLLAMA_MODEL: ${TSHIRT_OLLAMA_MODEL:-qwen2.5:7b-instruct}
+      TSHIRT_GENERATE_INTERVAL_SECONDS: ${TSHIRT_GENERATE_INTERVAL_SECONDS:-3600}
+      TSHIRT_IMAGE_PROVIDER: ${TSHIRT_IMAGE_PROVIDER:-ollama_svg}
+      TSHIRT_IMAGE_SIZE: ${TSHIRT_IMAGE_SIZE:-2048}
+      TSHIRT_MAX_DESIGNS: ${TSHIRT_MAX_DESIGNS:-80}
+      HOME: /data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   redis:
     image: redis:7-alpine
     container_name: clips_redis
