@@ -64,6 +64,8 @@ Common values to change:
 - `TSHIRT_POLLINATIONS_MODEL`: image model for Pollinations, default `flux`.
 - `TSHIRT_OLLAMA_NUM_PREDICT`: token budget for the design brief, default `6500`.
 - `TSHIRT_OLLAMA_TEMPERATURE`: design brief creativity, default `0.85`.
+- `TSHIRT_OLLAMA_DESIGN_ATTEMPTS`: number of unique-brief attempts before fallback, default `3`.
+- `TSHIRT_RECENT_PROMPT_HISTORY`: number of recent prompts Ollama is told to avoid, default `12`.
 - `TSHIRT_GENERATE_INTERVAL_SECONDS`: schedule for the T-shirt generator, default `3600`.
 - `TSHIRT_FRONTEND_PORT`: host port for the T-shirt design UI, default `3002`.
 

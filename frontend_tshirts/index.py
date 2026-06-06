@@ -40,9 +40,58 @@ POLLINATIONS_BASE_URL = os.getenv("TSHIRT_POLLINATIONS_BASE_URL", "https://gen.p
 POLLINATIONS_MODEL = os.getenv("TSHIRT_POLLINATIONS_MODEL", "flux")
 MAX_DESIGNS = max(1, int(os.getenv("TSHIRT_MAX_DESIGNS", "80")))
 IMAGE_SIZE = max(768, int(os.getenv("TSHIRT_IMAGE_SIZE", "2048")))
+RECENT_PROMPT_HISTORY = max(0, int(os.getenv("TSHIRT_RECENT_PROMPT_HISTORY", "12")))
+OLLAMA_DESIGN_ATTEMPTS = max(1, int(os.getenv("TSHIRT_OLLAMA_DESIGN_ATTEMPTS", "3")))
 
 store_lock = threading.Lock()
 generation_lock = threading.Lock()
+
+SUBJECT_LANES = [
+    "mythic animal emblem",
+    "retro space souvenir patch",
+    "botanical machine hybrid",
+    "stormy mountain expedition graphic",
+    "surreal ocean creature crest",
+    "desert night motorcycle badge",
+    "cyberpunk street market icon",
+    "ancient astronomy diagram",
+    "skate-zine comic mascot",
+    "geometric jungle scene",
+    "vintage workwear tool insignia",
+    "abstract music festival poster mark",
+    "deep-sea exploration symbol",
+    "minimalist martial arts dojo crest",
+    "dreamlike city skyline print",
+    "folk-art firebird illustration",
+]
+COMPOSITION_LANES = [
+    "large centered crest with small orbiting details",
+    "stacked poster composition with bold foreground silhouette",
+    "circular badge with layered interior scene",
+    "diagonal motion composition with speed lines",
+    "symmetrical mascot framed by decorative shapes",
+    "single oversized icon with subtle texture fields",
+    "split sun-and-shadow composition",
+    "arched souvenir graphic with a strong base banner",
+]
+STYLE_LANES = [
+    "risograph ink texture",
+    "clean vector streetwear",
+    "1970s outdoor catalog illustration",
+    "Japanese woodblock inspired linework",
+    "neo-vintage tattoo flash",
+    "bold comic screen print",
+    "minimal Swiss poster geometry",
+    "hand-inked zine illustration",
+]
+COLOR_LANES = [
+    "bone white, graphite black, teal, and amber",
+    "cream, oxblood, navy, and dusty cyan",
+    "charcoal, electric blue, hot coral, and pale yellow",
+    "forest green, ivory, copper, and midnight blue",
+    "black, white, acid green, and safety orange",
+    "deep purple, mint, warm gray, and rose red",
+]
 
 
 def utc_now():
@@ -155,6 +204,60 @@ def catalog_payload():
     return visible
 
 
+def recent_design_history(limit=None):
+    if limit is None:
+        limit = RECENT_PROMPT_HISTORY
+    if limit <= 0:
+        return []
+    with store_lock:
+        catalog = load_catalog()
+    history = []
+    for item in catalog[:limit]:
+        title = str(item.get("title") or "").strip()
+        prompt = str(item.get("prompt") or "").strip()
+        if not title and not prompt:
+            continue
+        history.append({"title": title, "prompt": prompt})
+    return history
+
+
+def prompt_signature(value):
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:360]
+
+
+def is_duplicate_prompt(prompt, history):
+    signature = prompt_signature(prompt)
+    if not signature:
+        return False
+    return any(signature == prompt_signature(item.get("prompt", "")) for item in history)
+
+
+def creative_constraints(seed):
+    rng = random.Random(seed)
+    return {
+        "subject": rng.choice(SUBJECT_LANES),
+        "composition": rng.choice(COMPOSITION_LANES),
+        "style": rng.choice(STYLE_LANES),
+        "colors": rng.choice(COLOR_LANES),
+    }
+
+
+def history_text(history):
+    if not history:
+        return "No previous designs are saved yet."
+    lines = []
+    for index, item in enumerate(history[:RECENT_PROMPT_HISTORY], start=1):
+        title = str(item.get("title") or "Untitled").strip()
+        prompt = str(item.get("prompt") or "").strip()
+        if len(prompt) > 220:
+            prompt = f"{prompt[:220]}..."
+        lines.append(f"{index}. {title}: {prompt}")
+    return "\n".join(lines)
+
+
 def normalize_ollama_payload(text):
     body = str(text or "").strip()
     body = re.sub(r"^```(?:json)?\s*", "", body, flags=re.IGNORECASE)
@@ -176,10 +279,31 @@ def normalize_ollama_payload(text):
     return parsed if isinstance(parsed, dict) else {}
 
 
-def ask_ollama_for_design():
+def ask_ollama_for_design(history=None, attempt=1):
+    history = history or []
+    seed_source = f"{time.time()}-{random.getrandbits(64)}-{attempt}".encode("utf-8")
+    seed = int(hashlib.sha256(seed_source).hexdigest()[:8], 16)
+    constraints = creative_constraints(seed)
     prompt = f"""
 Create one original print-ready T-shirt design concept as a senior apparel graphic designer.
 Return only a JSON object, with no Markdown.
+
+This is generation attempt {attempt}.
+Creative seed for this run: {seed}
+
+Recent saved designs to avoid:
+{history_text(history)}
+
+Novelty requirements:
+- Do not reuse the same subject, scene, title, wording, or prompt structure as any recent saved design.
+- Make the new concept clearly different enough that a buyer would describe it as a separate idea.
+- Use the run-specific direction below even if you have a favorite default concept.
+
+Run-specific direction:
+- subject lane: {constraints["subject"]}
+- composition lane: {constraints["composition"]}
+- art style lane: {constraints["style"]}
+- color lane: {constraints["colors"]}
 
 The JSON must have:
 - title: 3 to 8 words
@@ -213,6 +337,8 @@ SVG rules:
                 "temperature": OLLAMA_TEMPERATURE,
                 "num_predict": OLLAMA_NUM_PREDICT,
                 "top_p": 0.92,
+                "repeat_penalty": 1.16,
+                "seed": seed,
             },
         },
         timeout=OLLAMA_TIMEOUT_SECONDS,
@@ -234,20 +360,31 @@ SVG rules:
     return normalize_ollama_payload(payload.get("response", ""))
 
 
-def fallback_brief():
+def fallback_brief(seed=None):
+    rng = random.Random(seed if seed is not None else random.getrandbits(64))
     themes = [
         ("Midnight Circuit Bloom", "a futuristic botanical circuit-board flower emblem"),
         ("Solar Drift Club", "a retro sun, drifting clouds, and bold geometric waves"),
         ("Quiet Thunder", "a minimalist lightning crest with layered ink texture"),
         ("Neon Workshop", "a clean vaporwave tool badge with abstract sparks"),
         ("Orbit Motel", "a space-travel souvenir patch with moons and crisp line art"),
+        ("Iron Orchard", "a mechanical apple tree with gears, leaves, and clean workwear lines"),
+        ("Lantern Tide", "a glowing coastal lantern surrounded by stylized waves and stars"),
+        ("Ghost Signal Radio", "a vintage radio transmitting abstract spectral sound waves"),
+        ("Canyon Night Run", "a desert road badge with a moonlit canyon and bold tire tracks"),
+        ("Paper Tiger Relay", "an origami tiger mascot with sharp fold lines and racing motion"),
+        ("Cloud Forge", "a blacksmith anvil surrounded by storm clouds and geometric sparks"),
+        ("Orbit Garden", "a greenhouse dome floating among planets and botanical linework"),
+        ("Static Rodeo", "a surreal lightning horse with western poster typography shapes"),
     ]
-    title, idea = random.choice(themes)
-    palette = random.choice(
+    title, idea = rng.choice(themes)
+    palette = rng.choice(
         [
             ["#f8fafc", "#111827", "#14b8a6", "#f59e0b"],
             ["#fff7ed", "#172554", "#ef4444", "#22c55e"],
             ["#fefce8", "#18181b", "#38bdf8", "#fb7185"],
+            ["#f8fafc", "#27272a", "#a3e635", "#f97316"],
+            ["#ecfeff", "#1e1b4b", "#fb7185", "#facc15"],
         ]
     )
     return {
@@ -588,20 +725,48 @@ def generate_design(trigger="scheduled"):
             last_error="",
         )
 
-        try:
-            brief = ask_ollama_for_design()
-        except Exception as exc:
-            brief = fallback_brief()
-            brief["ollama_warning"] = str(exc)
+        recent_history = recent_design_history()
+        brief = {}
+        duplicate_warnings = []
+        for attempt in range(1, OLLAMA_DESIGN_ATTEMPTS + 1):
+            try:
+                brief = ask_ollama_for_design(recent_history, attempt=attempt)
+            except Exception as exc:
+                brief = fallback_brief(seed=f"{time.time()}-{attempt}")
+                brief["ollama_warning"] = str(exc)
+                break
+
+            if not brief:
+                duplicate_warnings.append(f"Attempt {attempt}: Ollama returned an empty design brief.")
+                continue
+
+            candidate_prompt = str(brief.get("prompt") or "").strip()
+            if not is_duplicate_prompt(candidate_prompt, recent_history):
+                break
+
+            duplicate_warnings.append(f"Attempt {attempt}: duplicate prompt rejected.")
+            recent_history.insert(
+                0,
+                {
+                    "title": str(brief.get("title") or "").strip(),
+                    "prompt": candidate_prompt,
+                },
+            )
+            brief = {}
 
         if not brief:
-            brief = fallback_brief()
-            brief["ollama_warning"] = "Ollama returned an empty design brief."
+            brief = fallback_brief(seed=f"{time.time()}-unique-fallback")
+            brief["ollama_warning"] = "Ollama did not produce a unique design brief."
+
+        if duplicate_warnings:
+            existing_warning = str(brief.get("ollama_warning") or "").strip()
+            joined_warnings = " ".join(duplicate_warnings)
+            brief["ollama_warning"] = f"{existing_warning} {joined_warnings}".strip()
 
         title = str(brief.get("title") or "T-Shirt Design").strip()[:90] or "T-Shirt Design"
         prompt = str(brief.get("prompt") or "").strip()
         if not prompt:
-            prompt = fallback_brief()["prompt"]
+            prompt = fallback_brief(seed=f"{time.time()}-missing-prompt")["prompt"]
             brief["prompt"] = prompt
 
         timestamp = utc_now().strftime("%Y%m%d-%H%M%S")
