@@ -32,14 +32,16 @@ GENERATE_INTERVAL_SECONDS = max(60, int(os.getenv("TSHIRT_GENERATE_INTERVAL_SECO
 IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "local_diffusion").strip().lower()
 LOCAL_IMAGE_HOST = os.getenv("TSHIRT_LOCAL_IMAGE_HOST", "http://image_generator:7860").rstrip("/")
 LOCAL_IMAGE_TIMEOUT_SECONDS = int(os.getenv("TSHIRT_LOCAL_IMAGE_TIMEOUT_SECONDS", "3600"))
-LOCAL_IMAGE_SIZE = max(512, int(os.getenv("TSHIRT_LOCAL_IMAGE_SIZE", "1024")))
+LOCAL_IMAGE_SIZE = max(512, int(os.getenv("TSHIRT_LOCAL_IMAGE_SIZE", "1536")))
 LOCAL_IMAGE_STEPS = max(1, int(os.getenv("TSHIRT_LOCAL_IMAGE_STEPS", "28")))
 LOCAL_IMAGE_GUIDANCE_SCALE = float(os.getenv("TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE", "7.0"))
 POLLINATIONS_API_KEY = os.getenv("TSHIRT_POLLINATIONS_API_KEY", "").strip()
 POLLINATIONS_BASE_URL = os.getenv("TSHIRT_POLLINATIONS_BASE_URL", "https://gen.pollinations.ai").rstrip("/")
 POLLINATIONS_MODEL = os.getenv("TSHIRT_POLLINATIONS_MODEL", "flux")
+POLLINATIONS_IMAGE_SIZE = max(768, int(os.getenv("TSHIRT_POLLINATIONS_IMAGE_SIZE", "2048")))
 MAX_DESIGNS = max(1, int(os.getenv("TSHIRT_MAX_DESIGNS", "80")))
-IMAGE_SIZE = max(768, int(os.getenv("TSHIRT_IMAGE_SIZE", "2048")))
+MIN_EXPORT_IMAGE_SIZE = 8000
+IMAGE_SIZE = max(MIN_EXPORT_IMAGE_SIZE, int(os.getenv("TSHIRT_IMAGE_SIZE", str(MIN_EXPORT_IMAGE_SIZE))))
 RECENT_PROMPT_HISTORY = max(0, int(os.getenv("TSHIRT_RECENT_PROMPT_HISTORY", "12")))
 OLLAMA_DESIGN_ATTEMPTS = max(1, int(os.getenv("TSHIRT_OLLAMA_DESIGN_ATTEMPTS", "3")))
 
@@ -542,6 +544,40 @@ def load_font(size, bold=False):
     return ImageFont.load_default()
 
 
+def resample_filter():
+    if hasattr(Image, "Resampling"):
+        return Image.Resampling.LANCZOS
+    return Image.LANCZOS
+
+
+def ensure_export_image_size(target_path):
+    with Image.open(target_path) as source:
+        width, height = source.size
+        target_edge = max(IMAGE_SIZE, width, height)
+        if source.format == "PNG" and width == target_edge and height == target_edge:
+            return
+        image = source.convert("RGBA")
+
+    scale = min(target_edge / image.width, target_edge / image.height)
+    resized_size = (
+        max(1, int(round(image.width * scale))),
+        max(1, int(round(image.height * scale))),
+    )
+    if image.size != resized_size:
+        image = image.resize(resized_size, resample_filter())
+
+    if image.size != (target_edge, target_edge):
+        canvas = Image.new("RGBA", (target_edge, target_edge), (0, 0, 0, 0))
+        offset = (
+            (target_edge - image.width) // 2,
+            (target_edge - image.height) // 2,
+        )
+        canvas.alpha_composite(image, offset)
+        image = canvas
+
+    image.save(target_path, "PNG")
+
+
 def render_prompt_card(brief, target_path):
     palette = [str(color) for color in brief.get("palette") or [] if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(color))]
     if len(palette) < 3:
@@ -626,7 +662,7 @@ def generate_pollinations_image(brief, target_path):
     )
     url = (
         f"{POLLINATIONS_BASE_URL}/image/"
-        f"{quote(full_prompt, safe='')}?width={IMAGE_SIZE}&height={IMAGE_SIZE}"
+        f"{quote(full_prompt, safe='')}?width={POLLINATIONS_IMAGE_SIZE}&height={POLLINATIONS_IMAGE_SIZE}"
         f"&seed={seed}&model={quote(POLLINATIONS_MODEL, safe='')}&enhance=true"
     )
     response = requests.get(
@@ -655,6 +691,7 @@ def generate_pollinations_image(brief, target_path):
     if "image" not in content_type.lower():
         raise RuntimeError("Image provider did not return an image.")
     target_path.write_bytes(response.content)
+    ensure_export_image_size(target_path)
 
 
 def generate_local_diffusion_image(brief, target_path):
@@ -702,6 +739,7 @@ def generate_local_diffusion_image(brief, target_path):
     if "image" not in content_type.lower():
         raise RuntimeError("Local image generator did not return an image.")
     target_path.write_bytes(response.content)
+    ensure_export_image_size(target_path)
 
 
 def create_svg_file(brief, target_path):

@@ -55,13 +55,15 @@ Common values to change:
 - `LEAGUECLIPS_AI_DEVICE`: `cpu` or a supported accelerator setup.
 - `OLLAMA_HOST_PORT`: host port for the Ollama service.
 - `TSHIRT_IMAGE_PROVIDER`: `local_diffusion` by default, which uses Ollama for a design brief and the local `image_generator` container for the raster image. Use `pollinations` only if you provide an API key, `ollama_svg` for simpler fully local SVG output, or `prompt_card` for local generated PNG cards.
-- `TSHIRT_LOCAL_IMAGE_SIZE`: image size sent to the local image generator, default `1024`.
+- `TSHIRT_IMAGE_SIZE`: final raster export size, default `8000`; PNG outputs are kept at least this large on both axes.
+- `TSHIRT_LOCAL_IMAGE_SIZE`: image size sent to the local image generator before export upscaling, default `1536`.
 - `TSHIRT_LOCAL_IMAGE_STEPS`: inference steps sent to the local image generator, default `28`. Higher can improve quality and takes longer.
 - `TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE`: prompt guidance for the local image generator, default `7.0`.
 - `IMAGEGEN_MODEL`: local image model, default `stabilityai/stable-diffusion-xl-base-1.0`.
 - `IMAGEGEN_DEVICE`: `auto`, `cpu`, `cuda`, or `mps`, default `auto`.
 - `TSHIRT_POLLINATIONS_API_KEY`: required when `TSHIRT_IMAGE_PROVIDER=pollinations`; Pollinations now requires an API key with available Pollen credits.
 - `TSHIRT_POLLINATIONS_MODEL`: image model for Pollinations, default `flux`.
+- `TSHIRT_POLLINATIONS_IMAGE_SIZE`: Pollinations request size before local export upscaling, default `2048`.
 - `TSHIRT_OLLAMA_NUM_PREDICT`: token budget for the design brief, default `6500`.
 - `TSHIRT_OLLAMA_TEMPERATURE`: design brief creativity, default `0.85`.
 - `TSHIRT_OLLAMA_DESIGN_ATTEMPTS`: number of unique-brief attempts before fallback, default `3`.
