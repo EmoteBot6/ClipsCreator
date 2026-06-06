@@ -57,6 +57,7 @@ Common values to change:
 - `TSHIRT_IMAGE_PROVIDER`: `local_diffusion` by default, which uses Ollama for a design brief and the local `image_generator` container for the raster image. Use `pollinations` only if you provide an API key, `ollama_svg` for simpler fully local SVG output, or `prompt_card` for local generated PNG cards.
 - `TSHIRT_IMAGE_SIZE`: final raster export size, default `8000`; PNG outputs are kept at least this large on both axes.
 - `TSHIRT_LOCAL_IMAGE_SIZE`: image size sent to the local image generator before export upscaling, default `1536`.
+- `TSHIRT_LOCAL_IMAGE_FALLBACK_HOSTS`: comma-separated fallback image API hosts if Docker DNS cannot resolve `image_generator`, default `http://clips_image_generator:7860,http://host.docker.internal:7860`.
 - `TSHIRT_LOCAL_IMAGE_STEPS`: inference steps sent to the local image generator, default `28`. Higher can improve quality and takes longer.
 - `TSHIRT_LOCAL_IMAGE_GUIDANCE_SCALE`: prompt guidance for the local image generator, default `7.0`.
 - `IMAGEGEN_MODEL`: local image model, default `stabilityai/stable-diffusion-xl-base-1.0`.

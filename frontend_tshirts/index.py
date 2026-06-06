@@ -31,6 +31,10 @@ OLLAMA_TEMPERATURE = float(os.getenv("TSHIRT_OLLAMA_TEMPERATURE", "0.85"))
 GENERATE_INTERVAL_SECONDS = max(60, int(os.getenv("TSHIRT_GENERATE_INTERVAL_SECONDS", "3600")))
 IMAGE_PROVIDER = os.getenv("TSHIRT_IMAGE_PROVIDER", "local_diffusion").strip().lower()
 LOCAL_IMAGE_HOST = os.getenv("TSHIRT_LOCAL_IMAGE_HOST", "http://image_generator:7860").rstrip("/")
+LOCAL_IMAGE_FALLBACK_HOSTS = os.getenv(
+    "TSHIRT_LOCAL_IMAGE_FALLBACK_HOSTS",
+    "http://clips_image_generator:7860,http://host.docker.internal:7860,http://localhost:7860",
+)
 LOCAL_IMAGE_TIMEOUT_SECONDS = int(os.getenv("TSHIRT_LOCAL_IMAGE_TIMEOUT_SECONDS", "3600"))
 LOCAL_IMAGE_SIZE = max(512, int(os.getenv("TSHIRT_LOCAL_IMAGE_SIZE", "1536")))
 LOCAL_IMAGE_STEPS = max(1, int(os.getenv("TSHIRT_LOCAL_IMAGE_STEPS", "28")))
@@ -544,6 +548,33 @@ def load_font(size, bold=False):
     return ImageFont.load_default()
 
 
+def local_image_hosts():
+    hosts = []
+    for raw_host in [LOCAL_IMAGE_HOST, *LOCAL_IMAGE_FALLBACK_HOSTS.split(",")]:
+        host = raw_host.strip().rstrip("/")
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
+def post_local_image(payload):
+    hosts = local_image_hosts()
+    last_error = None
+    for host in hosts:
+        try:
+            return requests.post(
+                f"{host}/api/generate",
+                json=payload,
+                timeout=LOCAL_IMAGE_TIMEOUT_SECONDS,
+            )
+        except (requests.exceptions.ConnectionError, requests.exceptions.ConnectTimeout) as exc:
+            last_error = exc
+    tried = ", ".join(hosts)
+    raise RuntimeError(
+        f"Could not connect to the local image generator. Tried: {tried}. Last error: {last_error}"
+    )
+
+
 def resample_filter():
     if hasattr(Image, "Resampling"):
         return Image.Resampling.LANCZOS
@@ -711,9 +742,8 @@ def generate_local_diffusion_image(brief, target_path):
         "copyrighted character, brand name, blurry, low contrast, muddy colors, photorealistic clothing photo, "
         "cropped artwork, extra text, misspelled text"
     )
-    response = requests.post(
-        f"{LOCAL_IMAGE_HOST}/api/generate",
-        json={
+    response = post_local_image(
+        {
             "prompt": full_prompt,
             "negative_prompt": negative_prompt,
             "width": LOCAL_IMAGE_SIZE,
@@ -721,8 +751,7 @@ def generate_local_diffusion_image(brief, target_path):
             "steps": LOCAL_IMAGE_STEPS,
             "guidance_scale": LOCAL_IMAGE_GUIDANCE_SCALE,
             "seed": seed,
-        },
-        timeout=LOCAL_IMAGE_TIMEOUT_SECONDS,
+        }
     )
     if response.status_code >= 400:
         details = response.text.strip()
@@ -734,7 +763,7 @@ def generate_local_diffusion_image(brief, target_path):
             pass
         if len(str(details)) > 500:
             details = str(details)[:500]
-        raise RuntimeError(f"Local image generator failed ({response.status_code}): {details}")
+        raise RuntimeError(f"Local image generator failed at {response.url} ({response.status_code}): {details}")
     content_type = response.headers.get("Content-Type", "")
     if "image" not in content_type.lower():
         raise RuntimeError("Local image generator did not return an image.")
