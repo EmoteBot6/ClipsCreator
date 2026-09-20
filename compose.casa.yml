@@ -9,6 +9,9 @@ services:
     environment:
       FLASK_ENV: production
       FLASK_APP: app
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LEAGUECLIPS_AUTO_SYNAPSE_TASK_POLL_SECONDS: ${LEAGUECLIPS_AUTO_SYNAPSE_TASK_POLL_SECONDS:-30}
+      LEAGUECLIPS_AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS: ${LEAGUECLIPS_AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS:-300}
       LEAGUECLIPS_TEMP_DIR: /tmp
       LEAGUECLIPS_AI_WHISPER_MODEL: medium
       LEAGUECLIPS_AI_DEVICE: cpu
@@ -36,7 +39,6 @@ services:
       XDG_CACHE_HOME: /data/.cache
       HF_HOME: /data/.cache/huggingface
       TRANSFORMERS_CACHE: /data/.cache/huggingface
-      # REDIS_URL: redis://redis:6379/0
     depends_on:
       - redis
       - ollama
@@ -74,6 +76,8 @@ services:
       - redis
       - ollama
     environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LEAGUECLIPS_WORKER_CONCURRENCY: ${LEAGUECLIPS_WORKER_CONCURRENCY:-2}
       LEAGUECLIPS_TEMP_DIR: /tmp
       LEAGUECLIPS_AI_WHISPER_MODEL: medium
       LEAGUECLIPS_AI_DEVICE: cpu
@@ -104,6 +108,9 @@ services:
     container_name: clips_frontend
     restart: unless-stopped
     user: "1000:1000"
+    environment:
+      TSHIRT_FRONTEND_PORT: ${TSHIRT_FRONTEND_PORT:-3002}
+      TSHIRT_FRONTEND_URL: ${TSHIRT_FRONTEND_URL:-}
     depends_on:
       - backend
     ports:
@@ -147,6 +154,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       TSHIRT_OLLAMA_HOST: http://ollama:11434
+      TSHIRT_GENERATION_ENABLED: ${TSHIRT_GENERATION_ENABLED:-true}
       TSHIRT_OLLAMA_MODEL: ${TSHIRT_OLLAMA_MODEL:-qwen2.5:7b-instruct}
       TSHIRT_OLLAMA_NUM_PREDICT: ${TSHIRT_OLLAMA_NUM_PREDICT:-6500}
       TSHIRT_OLLAMA_TEMPERATURE: ${TSHIRT_OLLAMA_TEMPERATURE:-0.85}
@@ -233,7 +241,10 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/ollama:/root/.ollama
+      - ${CLIPSCREATOR_APPDATA_DIR:-/DATA/AppData/ClipsCreator}/ollama:/data/.ollama
+    environment:
+      HOME: /data
+      OLLAMA_MODELS: /data/.ollama/models
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     logging:

@@ -3,12 +3,12 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from celery.result import AsyncResult
 
-from app.state import r as redis_client
-from app.tasks import celery, process_videos_task
+from app.state import mark_aborted, refresh_owned_lock, release_owned_lock, r as redis_client
+from app.tasks import MULTICLIP_SPLIT_LOCK_KEY, celery, process_videos_task
 from app.scripts.video_import import (
     download_source_from_url,
     get_recent_synapse_video_metadata,
@@ -25,6 +25,8 @@ AUTO_SYNAPSE_FEED_LIMIT = int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_FEED_LIMIT", "
 AUTO_SYNAPSE_TASK_STALE_SECONDS = int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_TASK_STALE_SECONDS", "86400"))
 AUTO_SYNAPSE_MAX_VIDEO_FAILURES = int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_MAX_VIDEO_FAILURES", "2"))
 AUTO_SYNAPSE_STALE_LOCK_SECONDS = int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_STALE_LOCK_SECONDS", "900"))
+AUTO_SYNAPSE_TASK_POLL_SECONDS = max(5, int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_TASK_POLL_SECONDS", "30")))
+AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS = max(60, int(os.getenv("LEAGUECLIPS_AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS", "300")))
 
 _watcher_lock = threading.Lock()
 _watcher_thread = None
@@ -35,7 +37,7 @@ class AutoSynapseStopRequested(Exception):
 
 
 def _utcnow():
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _truthy_env(name, default=False):
@@ -272,6 +274,10 @@ def _clear_active_fields(status):
         "active_source_url",
         "active_source_filename",
         "active_started_at_utc",
+        "active_progress_signature",
+        "active_progress_at_utc",
+        "pending_missing_checks",
+        "queue_message",
     ):
         status.pop(key, None)
 
@@ -314,13 +320,91 @@ def _remember_failed_video(status, video_id, reason):
 
 def _active_task_is_stale(status, task_state):
     stale_after = max(300, AUTO_SYNAPSE_TASK_STALE_SECONDS)
-    started_at = _utc_timestamp(status.get("active_started_at_utc"))
+    started_at = _utc_timestamp(status.get("active_progress_at_utc") or status.get("active_started_at_utc"))
     if not started_at:
         return False
     age_seconds = time.time() - started_at
     if age_seconds < stale_after:
         return False
     return str(task_state or "").upper() not in {"SUCCESS", "FAILURE", "REVOKED"}
+
+
+def _processing_workers():
+    """Only count workers that have registered the clip-processing task."""
+    registered = celery.control.inspect(timeout=1.0).registered() or {}
+    return [name for name, tasks in registered.items() if process_videos_task.name in (tasks or [])]
+
+
+def _check_pending_task(status):
+    """Keep queued work; replace a lost message only after two complete worker snapshots."""
+    task_id = status["active_task_id"]
+    status["queue_message"] = "Queued for a clip worker."
+    age = _seconds_since_utc(status.get("active_started_at_utc")) or 0
+    if age < AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS:
+        return
+    try:
+        workers = _processing_workers()
+        if not workers:
+            status["pending_missing_checks"] = 0
+            status["state"] = "waiting_for_worker"
+            status["queue_message"] = "No clip worker is responding. Start or restart the celery service; the queued job is retained."
+            return
+        inspector = celery.control.inspect(destination=workers, timeout=1.0)
+        snapshots = [inspector.active(), inspector.reserved(), inspector.scheduled()]
+        if any(not snapshot or any(worker not in snapshot for worker in workers) for snapshot in snapshots):
+            status["pending_missing_checks"] = 0
+            status["queue_message"] = "Waiting for a complete worker response before checking this queued job."
+            return
+        for snapshot in snapshots:
+            for jobs in snapshot.values():
+                for job in jobs or []:
+                    if (job.get("request") or job).get("id") == task_id:
+                        status["pending_missing_checks"] = 0
+                        status["queue_message"] = "The worker has this job. Waiting for its current work or preparation to finish."
+                        return
+        # A message still in Redis is queued, not lost. Celery priority queues are
+        # also checked; do not inspect arbitrary broker payloads or republish them.
+        queue = celery.conf.task_default_queue
+        separator = celery.conf.broker_transport_options.get("sep", "\x06\x16")
+        priorities = celery.conf.broker_transport_options.get("priority_steps", [0, 3, 6, 9])
+        if any(redis_client.llen(queue if priority == 0 else f"{queue}{separator}{priority}") for priority in priorities):
+            status["pending_missing_checks"] = 0
+            return
+        status["pending_missing_checks"] = int(status.get("pending_missing_checks") or 0) + 1
+        status["queue_message"] = "Checking whether the queued message was lost after a worker restart."
+        if status["pending_missing_checks"] < 2:
+            return
+        # Recheck the result after inspection, since a worker may just have started.
+        if AsyncResult(task_id, app=celery).state != "PENDING":
+            status["pending_missing_checks"] = 0
+            return
+        current = _load_status()
+        if current.get("stop_requested") or current.get("active_task_id") != task_id:
+            status.clear()
+            status.update(current)
+            return
+        mark_aborted(task_id)
+        celery.control.revoke(task_id, terminate=False)
+        release_owned_lock(redis_client, MULTICLIP_SPLIT_LOCK_KEY, task_id)
+        replacement = process_videos_task.apply_async(kwargs={
+            "source_url": status.get("active_source_url") or "",
+            "source_filename": status.get("active_source_filename") or "",
+            "auto_subtitles": auto_synapse_auto_subtitles(),
+        })
+        status.update(
+            active_task_id=replacement.id,
+            active_started_at_utc=_utcnow(),
+            active_progress_at_utc=_utcnow(),
+            active_progress_signature="",
+            pending_missing_checks=0,
+            last_recovered_task_id=task_id,
+            last_enqueued_at_utc=_utcnow(),
+            queue_message="Recovered a lost queued job using the already downloaded video.",
+        )
+        logger.warning("Recovered missing clip task %s as %s", task_id, replacement.id)
+    except Exception as exc:
+        status["pending_missing_checks"] = 0
+        status["queue_message"] = f"Could not verify the queued job: {exc}"
 
 
 def get_auto_synapse_status():
@@ -380,14 +464,9 @@ def stop_auto_synapse_task(task_id="", reason="Task was stopped by request."):
 
 def _release_check_lock(owner):
     try:
-        current_owner = redis_client.get(AUTO_SYNAPSE_LOCK_KEY)
+        release_owned_lock(redis_client, AUTO_SYNAPSE_LOCK_KEY, owner)
     except Exception:
-        current_owner = None
-    if current_owner == owner:
-        try:
-            redis_client.delete(AUTO_SYNAPSE_LOCK_KEY)
-        except Exception:
-            logger.exception("Failed to release auto Synapse watcher lock")
+        logger.exception("Failed to release auto Synapse watcher lock")
 
 
 def clear_auto_synapse_check_lock(reason="Manual watcher reset requested."):
@@ -412,7 +491,13 @@ def _clear_stale_check_lock_if_safe():
     if not current_owner:
         return False
     try:
-        redis_client.delete(AUTO_SYNAPSE_LOCK_KEY)
+        ttl = redis_client.ttl(AUTO_SYNAPSE_LOCK_KEY)
+        # A newly acquired lock may precede its status update. Never clear it
+        # merely because the previous check left an idle status behind.
+        if ttl > AUTO_SYNAPSE_LOCK_TTL_SECONDS - max(60, AUTO_SYNAPSE_STALE_LOCK_SECONDS):
+            return False
+        if not release_owned_lock(redis_client, AUTO_SYNAPSE_LOCK_KEY, current_owner):
+            return False
         logger.warning("Cleared stale auto Synapse check lock while watcher state was %s", status.get("state"))
         return True
     except Exception:
@@ -422,14 +507,12 @@ def _clear_stale_check_lock_if_safe():
 
 def _refresh_check_lock(owner):
     try:
-        current_owner = redis_client.get(AUTO_SYNAPSE_LOCK_KEY)
-        if current_owner == owner:
-            redis_client.expire(AUTO_SYNAPSE_LOCK_KEY, AUTO_SYNAPSE_LOCK_TTL_SECONDS)
+        refresh_owned_lock(redis_client, AUTO_SYNAPSE_LOCK_KEY, owner, AUTO_SYNAPSE_LOCK_TTL_SECONDS)
     except Exception:
         logger.debug("Failed to refresh auto Synapse watcher lock", exc_info=True)
 
 
-def run_auto_synapse_check(trigger="poll"):
+def run_auto_synapse_check(trigger="poll", check_feed=True):
     now_utc = _utcnow()
     if not auto_synapse_enabled():
         logger.info("Auto Synapse watcher check skipped because it is disabled")
@@ -491,6 +574,10 @@ def run_auto_synapse_check(trigger="poll"):
             task_result = AsyncResult(active_task_id, app=celery)
             task_state = str(task_result.state or "PENDING")
             status["active_task_state"] = task_state
+            signature = json.dumps([task_state, _task_info_dict(task_result.info)], sort_keys=True, default=str)
+            if task_state != "PENDING" and signature != status.get("active_progress_signature"):
+                status["active_progress_signature"] = signature
+                status["active_progress_at_utc"] = _utcnow()
             logger.info(
                 "Auto Synapse active task observed: task_id=%s state=%s",
                 active_task_id,
@@ -502,7 +589,11 @@ def run_auto_synapse_check(trigger="poll"):
                     f"{AUTO_SYNAPSE_TASK_STALE_SECONDS} seconds."
                 )
                 active_video_id = str(status.get("active_video_id") or "").strip()
-                _remember_failed_video(status, active_video_id, reason)
+                # Cancel the old task before allowing another job for this video.
+                mark_aborted(active_task_id)
+                celery.control.revoke(active_task_id, terminate=True, signal="SIGTERM")
+                if task_state != "PENDING":
+                    _remember_failed_video(status, active_video_id, reason)
                 status["state"] = "error"
                 status["last_task_state"] = task_state
                 status["last_error"] = reason
@@ -526,6 +617,8 @@ def run_auto_synapse_check(trigger="poll"):
                     status["last_processed_at_utc"] = finished_utc
                     status["last_error"] = ""
                     _clear_active_fields(status)
+                    status["state"] = "idle"
+                    check_feed = True
                     logger.info(
                         "Auto Synapse task completed successfully: task_id=%s video_id=%s",
                         active_task_id,
@@ -551,11 +644,30 @@ def run_auto_synapse_check(trigger="poll"):
                     return _save_status(status)
             else:
                 status["state"] = "processing"
+                status.pop("queue_message", None)
+                if task_state == "PENDING":
+                    _check_pending_task(status)
+                else:
+                    status["pending_missing_checks"] = 0
                 status["last_task_observed_at_utc"] = _utcnow()
                 _refresh_check_lock(owner)
                 return _save_status(status)
 
+        if not check_feed:
+            return _save_status(status)
         _clear_candidate_fields(status)
+        try:
+            workers = _processing_workers()
+        except Exception:
+            logger.warning("Could not contact clip workers", exc_info=True)
+            workers = []
+        if not workers:
+            status.update(
+                state="waiting_for_worker",
+                queue_message="No clip worker is responding. Start or restart the celery service to resume automatic clips.",
+            )
+            return _save_status(status)
+        status.pop("queue_message", None)
         logger.info("Auto Synapse fetching recent feed items: limit=%s", AUTO_SYNAPSE_FEED_LIMIT)
         _refresh_check_lock(owner)
         feed_items = get_recent_synapse_video_metadata(limit=AUTO_SYNAPSE_FEED_LIMIT)
@@ -713,14 +825,20 @@ def queue_auto_synapse_check(trigger="manual"):
 def _watcher_loop():
     logger.info("Auto Synapse watcher loop started")
     _merge_status(
-        state="idle",
         watcher_started_at_utc=_utcnow(),
         last_error="",
     )
 
     while True:
         try:
-            run_auto_synapse_check(trigger="scheduled")
+            status = _load_status()
+            feed_age = _seconds_since_utc(status.get("last_feed_checked_at_utc"))
+            feed_due = (
+                feed_age is None or feed_age >= auto_synapse_poll_seconds()
+                or status.get("state") in {"waiting_for_worker", "error", "download_failed"}
+            )
+            if status.get("active_task_id") or feed_due:
+                run_auto_synapse_check(trigger="scheduled", check_feed=feed_due)
         except Exception as exc:
             logger.exception("Auto Synapse scheduled check failed")
             _merge_status(
@@ -729,7 +847,7 @@ def _watcher_loop():
                 last_checked_at_utc=_utcnow(),
                 last_error=str(exc),
             )
-        time.sleep(auto_synapse_poll_seconds())
+        time.sleep(AUTO_SYNAPSE_TASK_POLL_SECONDS)
 
 
 def start_auto_synapse_watcher():

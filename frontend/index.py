@@ -1,9 +1,11 @@
 import os
 import requests
+from urllib.parse import urlsplit
 from flask import (
     Flask,
     Response,
     jsonify,
+    redirect,
     render_template,
     request,
     send_from_directory,
@@ -14,6 +16,18 @@ from flask import (
 app = Flask(__name__)
 BACKEND_BASE = "http://backend:5000"
 REQUEST_TIMEOUT = 120
+
+
+@app.route("/tshirts")
+def tshirts():
+    configured_url = os.getenv("TSHIRT_FRONTEND_URL", "").strip()
+    if configured_url:
+        return redirect(configured_url)
+    host = urlsplit(request.host_url).hostname
+    if ":" in host:
+        host = f"[{host}]"
+    port = int(os.getenv("TSHIRT_FRONTEND_PORT", "3002"))
+    return redirect(f"{request.scheme}://{host}:{port}/")
 
 
 def _proxy_json(method, path, **kwargs):

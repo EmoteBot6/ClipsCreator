@@ -272,6 +272,7 @@
         <p class="muted">Hourly AI-generated shirt artwork</p>
       </div>
       <div class="toolbar">
+        <label><input id="generationToggle" type="checkbox" role="switch" disabled /> Image creation <span id="generationValue">Loading</span></label>
         <button id="generateButton" class="button" type="button">Generate Now</button>
         <button id="refreshButton" class="button" type="button">Refresh</button>
         <button id="deleteAllButton" class="button button-danger" type="button">Delete All</button>
@@ -281,6 +282,7 @@
     <section class="card">
       <h2>Status</h2>
       <p id="message" class="muted">Loading...</p>
+      <p class="muted">Downloads are at least 8,000 × 8,000. Turning creation off pauses new designs; an image already in progress will finish.</p>
       <div class="status-grid">
         <div class="status-item">
           <strong>State</strong>
@@ -310,6 +312,8 @@
   <script>
     const grid = document.getElementById("designGrid");
     const generateButton = document.getElementById("generateButton");
+    const generationToggle = document.getElementById("generationToggle");
+    let settingsSaving = false;
     const refreshButton = document.getElementById("refreshButton");
     const deleteAllButton = document.getElementById("deleteAllButton");
 
@@ -352,14 +356,19 @@
     }
 
     function renderStatus(status) {
+      if (!settingsSaving) {
+        generationToggle.checked = !!status.generation_enabled;
+        generationToggle.disabled = false;
+      }
+      document.getElementById("generationValue").textContent = status.generation_enabled ? "On" : "Off";
       document.getElementById("message").textContent = status.last_error
         ? `${status.current_message || "Idle"} Last error: ${status.last_error}`
         : (status.current_message || "Idle");
-      document.getElementById("stateValue").textContent = status.is_running ? "Generating" : "Idle";
+      document.getElementById("stateValue").textContent = status.is_running ? "Generating" : (status.generation_enabled ? "Idle" : "Paused");
       document.getElementById("nextValue").textContent = formatDate(status.next_attempt_at_utc);
       document.getElementById("providerValue").textContent = `${status.provider || "unknown"} / ${status.model || ""}`;
       document.getElementById("countValue").textContent = status.count || 0;
-      generateButton.disabled = !!status.is_running;
+      generateButton.disabled = !!status.is_running || !status.generation_enabled;
     }
 
     function renderDesigns(designs) {
@@ -377,12 +386,13 @@
         return `
           <article class="design-card" data-id="${escapeAttr(design.id)}">
             <a class="preview" href="${escapeAttr(design.download_url || design.url)}" target="_blank" rel="noopener">
-              <img src="${escapeAttr(design.url)}" alt="${escapeAttr(design.title || "T-shirt design")}" loading="lazy" />
+              <img src="${escapeAttr(design.preview_url || design.url)}" alt="${escapeAttr(design.title || "T-shirt design")}" loading="lazy" />
             </a>
             <h3 class="card-title">${escapeHtml(design.title || "T-Shirt Design")}</h3>
             <div class="meta">
               <span class="${statusClass}">${escapeHtml(design.status || "generated")}</span>
               <span class="badge">${escapeHtml(design.provider || "provider")}</span>
+              ${design.width && design.height ? `<span class="badge">${escapeHtml(design.width)} × ${escapeHtml(design.height)}</span>` : ""}
               ${tagHtml}
             </div>
             <p class="prompt">${escapeHtml(design.prompt || "")}</p>
@@ -429,8 +439,26 @@
         })
         .catch((err) => {
           document.getElementById("message").textContent = `Could not queue generation: ${err}`;
-          generateButton.disabled = false;
+          loadStatus();
         });
+    });
+
+    generationToggle.addEventListener("change", async () => {
+      settingsSaving = true;
+      generationToggle.disabled = true;
+      generateButton.disabled = true;
+      try {
+        await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ generation_enabled: generationToggle.checked })
+        }).then(readJson);
+      } catch (err) {
+        document.getElementById("message").textContent = `Could not save setting: ${err}`;
+      } finally {
+        settingsSaving = false;
+        loadStatus();
+      }
     });
 
     refreshButton.addEventListener("click", refreshAll);

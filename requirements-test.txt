@@ -1,0 +1,8 @@
+pytest>=8,<10
+flask
+flask-cors
+celery[redis]
+moviepy==1.0.3
+pillow
+requests
+PyYAML

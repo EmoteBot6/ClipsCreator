@@ -7,6 +7,7 @@ import re
 import shutil
 import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -22,6 +23,9 @@ DATA_DIR = Path(os.getenv("TSHIRT_DATA_DIR", "/data")).resolve()
 DESIGNS_DIR = DATA_DIR / "designs"
 CATALOG_PATH = DATA_DIR / "designs.json"
 STATUS_PATH = DATA_DIR / "status.json"
+GENERATION_ENABLED_DEFAULT = os.getenv("TSHIRT_GENERATION_ENABLED", "true").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 OLLAMA_HOST = os.getenv("TSHIRT_OLLAMA_HOST", "http://ollama:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("TSHIRT_OLLAMA_MODEL", "qwen2.5:7b-instruct")
@@ -51,6 +55,8 @@ OLLAMA_DESIGN_ATTEMPTS = max(1, int(os.getenv("TSHIRT_OLLAMA_DESIGN_ATTEMPTS", "
 
 store_lock = threading.Lock()
 generation_lock = threading.Lock()
+scheduler_wakeup = threading.Event()
+scheduler_thread = None
 
 SUBJECT_LANES = [
     "mythic animal emblem",
@@ -124,7 +130,7 @@ def ensure_dirs():
 
 def safe_id(raw):
     value = str(raw or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+    if value in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
         raise ValueError("Invalid design id.")
     return value
 
@@ -167,6 +173,7 @@ def load_status():
     if not isinstance(status, dict):
         status = {}
     status.setdefault("is_running", False)
+    status.setdefault("generation_enabled", GENERATION_ENABLED_DEFAULT)
     status.setdefault("last_attempt_at_utc", "")
     status.setdefault("last_success_at_utc", "")
     status.setdefault("last_error", "")
@@ -174,19 +181,24 @@ def load_status():
     return status
 
 
+def status_payload(status):
+    status = dict(status)
+    status["interval_seconds"] = GENERATE_INTERVAL_SECONDS
+    status["provider"] = IMAGE_PROVIDER
+    status["export_image_size"] = IMAGE_SIZE
+    last_attempt = parse_iso(status.get("last_attempt_at_utc"))
+    status["next_attempt_at_utc"] = (
+        (last_attempt + timedelta(seconds=GENERATE_INTERVAL_SECONDS)).isoformat().replace("+00:00", "Z")
+        if last_attempt else iso_now()
+    ) if status["generation_enabled"] else None
+    return status
+
+
 def save_status(**updates):
     with store_lock:
         status = load_status()
         status.update(updates)
-        status["interval_seconds"] = GENERATE_INTERVAL_SECONDS
-        status["provider"] = IMAGE_PROVIDER
-        last_attempt = parse_iso(status.get("last_attempt_at_utc"))
-        if last_attempt:
-            status["next_attempt_at_utc"] = (
-                last_attempt + timedelta(seconds=GENERATE_INTERVAL_SECONDS)
-            ).isoformat().replace("+00:00", "Z")
-        else:
-            status["next_attempt_at_utc"] = iso_now()
+        status = status_payload(status)
         write_json(STATUS_PATH, status)
         return status
 
@@ -584,7 +596,7 @@ def resample_filter():
 def ensure_export_image_size(target_path):
     with Image.open(target_path) as source:
         width, height = source.size
-        target_edge = max(IMAGE_SIZE, width, height)
+        target_edge = max(MIN_EXPORT_IMAGE_SIZE, IMAGE_SIZE, width, height)
         if source.format == "PNG" and width == target_edge and height == target_edge:
             return
         image = source.convert("RGBA")
@@ -606,7 +618,18 @@ def ensure_export_image_size(target_path):
         canvas.alpha_composite(image, offset)
         image = canvas
 
-    image.save(target_path, "PNG")
+    image.save(target_path, "PNG", dpi=(300, 300))
+    image.close()
+
+
+def image_export_metadata(target_path):
+    """Validate the downloadable file and create a lightweight gallery preview."""
+    ensure_export_image_size(target_path)
+    with Image.open(target_path) as image:
+        width, height = image.size
+        image.thumbnail((600, 600), resample_filter())
+        image.save(target_path.with_name("preview.png"), "PNG")
+    return {"width": width, "height": height}
 
 
 def render_prompt_card(brief, target_path):
@@ -722,7 +745,6 @@ def generate_pollinations_image(brief, target_path):
     if "image" not in content_type.lower():
         raise RuntimeError("Image provider did not return an image.")
     target_path.write_bytes(response.content)
-    ensure_export_image_size(target_path)
 
 
 def generate_local_diffusion_image(brief, target_path):
@@ -768,22 +790,27 @@ def generate_local_diffusion_image(brief, target_path):
     if "image" not in content_type.lower():
         raise RuntimeError("Local image generator did not return an image.")
     target_path.write_bytes(response.content)
-    ensure_export_image_size(target_path)
 
 
 def create_svg_file(brief, target_path):
     svg = sanitize_svg(brief.get("svg", ""))
     if not svg:
         svg = generated_svg_from_brief(brief)
-    target_path.write_text(svg, encoding="utf-8")
+    root = ET.fromstring(svg)
+    root.set("width", str(IMAGE_SIZE))
+    root.set("height", str(IMAGE_SIZE))
+    ET.register_namespace("", "http://www.w3.org/2000/svg")
+    target_path.write_text(ET.tostring(root, encoding="unicode"), encoding="utf-8")
 
 
-def generate_design(trigger="scheduled"):
-    if not generation_lock.acquire(blocking=False):
+def generate_design(trigger="scheduled", lock_acquired=False):
+    if not lock_acquired and not generation_lock.acquire(blocking=False):
         return {"status": "busy"}
 
     design_id = ""
     try:
+        if not load_status()["generation_enabled"]:
+            return {"status": "disabled"}
         ensure_dirs()
         save_status(
             is_running=True,
@@ -847,6 +874,7 @@ def generate_design(trigger="scheduled"):
         mime_type = "image/svg+xml" if filename.endswith(".svg") else "image/png"
         status = "generated"
         error = ""
+        dimensions = {"width": IMAGE_SIZE, "height": IMAGE_SIZE}
 
         save_status(is_running=True, current_message=f"Creating image with {provider}...")
         try:
@@ -860,14 +888,18 @@ def generate_design(trigger="scheduled"):
                 filename = "design.svg"
                 mime_type = "image/svg+xml"
                 create_svg_file(brief, design_dir / filename)
+            if mime_type == "image/png":
+                dimensions = image_export_metadata(design_dir / filename)
         except Exception as exc:
             filename = "design.png"
             mime_type = "image/png"
             status = "fallback"
             error = str(exc)
             render_prompt_card(brief, design_dir / filename)
+            dimensions = image_export_metadata(design_dir / filename)
 
         metadata = {
+            **dimensions,
             "id": design_id,
             "title": title,
             "prompt": prompt,
@@ -882,6 +914,7 @@ def generate_design(trigger="scheduled"):
             "created_at_utc": iso_now(),
             "trigger": trigger,
             "url": f"/designs/{design_id}/{filename}",
+            "preview_url": f"/designs/{design_id}/preview.png" if mime_type == "image/png" else f"/designs/{design_id}/{filename}",
             "download_url": f"/designs/{design_id}/{filename}",
         }
         write_json(design_dir / "metadata.json", metadata)
@@ -915,7 +948,7 @@ def generate_design(trigger="scheduled"):
 
 
 def should_generate(status):
-    if status.get("is_running"):
+    if not status.get("generation_enabled", GENERATION_ENABLED_DEFAULT) or status.get("is_running"):
         return False
     last_attempt = parse_iso(status.get("last_attempt_at_utc"))
     if not last_attempt:
@@ -925,22 +958,39 @@ def should_generate(status):
 
 def scheduler_loop():
     ensure_dirs()
-    save_status(current_message="Idle")
-    time.sleep(5)
+    scheduler_wakeup.wait(5)
     while True:
+        scheduler_wakeup.clear()
         try:
             if should_generate(load_status()):
                 generate_design(trigger="scheduled")
         except Exception as exc:
             save_status(is_running=False, current_message="Scheduler error.", last_error=str(exc))
-        time.sleep(min(60, max(10, GENERATE_INTERVAL_SECONDS // 12)))
+        scheduler_wakeup.wait(min(60, max(10, GENERATE_INTERVAL_SECONDS // 12)))
+
+
+def start_scheduler():
+    global scheduler_thread
+    if scheduler_thread and scheduler_thread.is_alive():
+        return
+    ensure_dirs()
+    # A thread cannot survive a process restart; preserve the user's toggle only.
+    save_status(is_running=False, current_message="Idle")
+    scheduler_thread = threading.Thread(target=scheduler_loop, name="tshirt-scheduler", daemon=True)
+    scheduler_thread.start()
 
 
 def start_manual_generation():
-    if generation_lock.locked():
+    if not generation_lock.acquire(blocking=False):
         return False
-    thread = threading.Thread(target=generate_design, kwargs={"trigger": "manual"}, daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(
+            target=generate_design, kwargs={"trigger": "manual", "lock_acquired": True}, daemon=True,
+        )
+        thread.start()
+    except Exception:
+        generation_lock.release()
+        raise
     return True
 
 
@@ -962,19 +1012,20 @@ def home():
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
-    status = load_status()
-    status["interval_seconds"] = GENERATE_INTERVAL_SECONDS
-    status["provider"] = IMAGE_PROVIDER
+    status = status_payload(load_status())
     status["model"] = OLLAMA_MODEL
     status["count"] = len(catalog_payload())
-    last_attempt = parse_iso(status.get("last_attempt_at_utc"))
-    if last_attempt:
-        status["next_attempt_at_utc"] = (
-            last_attempt + timedelta(seconds=GENERATE_INTERVAL_SECONDS)
-        ).isoformat().replace("+00:00", "Z")
-    else:
-        status["next_attempt_at_utc"] = iso_now()
     return jsonify(status)
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("generation_enabled"), bool):
+        return jsonify({"error": "generation_enabled must be a boolean."}), 400
+    save_status(generation_enabled=payload["generation_enabled"])
+    scheduler_wakeup.set()
+    return api_status()
 
 
 @app.route("/api/designs", methods=["GET"])
@@ -984,6 +1035,8 @@ def api_designs():
 
 @app.route("/api/generate-now", methods=["POST"])
 def api_generate_now():
+    if not load_status()["generation_enabled"]:
+        return jsonify({"status": "disabled", "error": "Turn image creation on before generating."}), 409
     if not start_manual_generation():
         return jsonify({"status": "busy"}), 409
     return jsonify({"status": "queued"}), 202
@@ -1039,10 +1092,6 @@ def design_file(design_id, filename):
     return send_from_directory(target_dir, safe_filename, as_attachment=False)
 
 
-ensure_dirs()
-scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
-scheduler_thread.start()
-
-
 if __name__ == "__main__":
+    start_scheduler()
     app.run(host="0.0.0.0", port=3002, debug=False)

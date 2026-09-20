@@ -20,6 +20,9 @@ services:
     working_dir: /workspace/backend
     environment:
       FLASK_APP: app
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LEAGUECLIPS_AUTO_SYNAPSE_TASK_POLL_SECONDS: ${LEAGUECLIPS_AUTO_SYNAPSE_TASK_POLL_SECONDS:-30}
+      LEAGUECLIPS_AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS: ${LEAGUECLIPS_AUTO_SYNAPSE_PENDING_TIMEOUT_SECONDS:-300}
       FLASK_ENV: production
       LEAGUECLIPS_TEMP_DIR: /tmp
       LEAGUECLIPS_AI_WHISPER_MODEL: medium
@@ -56,7 +59,7 @@ services:
     cap_drop:
       - ALL
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz')"]
       interval: 20s
       timeout: 3s
       retries: 5
@@ -85,6 +88,8 @@ services:
       - ./data/backend-videos:/videos
     working_dir: /workspace/backend
     environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LEAGUECLIPS_WORKER_CONCURRENCY: ${LEAGUECLIPS_WORKER_CONCURRENCY:-2}
       LEAGUECLIPS_TEMP_DIR: /tmp
       LEAGUECLIPS_AI_WHISPER_MODEL: medium
       LEAGUECLIPS_AI_DEVICE: cpu
@@ -126,6 +131,9 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    environment:
+      TSHIRT_FRONTEND_PORT: ${TSHIRT_FRONTEND_PORT:-3002}
+      TSHIRT_FRONTEND_URL: ${TSHIRT_FRONTEND_URL:-}
     read_only: true
     tmpfs:
       - /tmp
@@ -188,6 +196,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       TSHIRT_OLLAMA_HOST: http://ollama:11434
+      TSHIRT_GENERATION_ENABLED: ${TSHIRT_GENERATION_ENABLED:-true}
       TSHIRT_OLLAMA_MODEL: ${TSHIRT_OLLAMA_MODEL:-qwen2.5:7b-instruct}
       TSHIRT_OLLAMA_NUM_PREDICT: ${TSHIRT_OLLAMA_NUM_PREDICT:-6500}
       TSHIRT_OLLAMA_TEMPERATURE: ${TSHIRT_OLLAMA_TEMPERATURE:-0.85}
@@ -287,7 +296,10 @@ services:
     ports:
       - "${OLLAMA_HOST_PORT:-12434}:11434"
     volumes:
-      - ./data/ollama:/root/.ollama
+      - ./data/ollama:/data/.ollama
+    environment:
+      HOME: /data
+      OLLAMA_MODELS: /data/.ollama/models
     security_opt:
       - no-new-privileges:true
     cap_drop:

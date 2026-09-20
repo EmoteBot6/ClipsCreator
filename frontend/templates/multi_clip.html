@@ -349,7 +349,7 @@
       const activeTaskProgress = activeTaskSnapshot.progress && typeof activeTaskSnapshot.progress === "object"
         ? activeTaskSnapshot.progress
         : {};
-      const activeTaskMessage = activeTaskProgress.message || "";
+      const activeTaskMessage = activeTaskProgress.message || activeTaskSnapshot.status || data.queue_message || "";
       const activeTaskFrame = Number(activeTaskProgress.frame || 0);
       const activeTaskTotal = Number(activeTaskProgress.total || 0);
       const activeTaskPercent = activeTaskTotal > 0 ? Math.floor((activeTaskFrame / activeTaskTotal) * 100) : null;
@@ -944,7 +944,7 @@
           }
 
           const progress = data.progress || {};
-          setStatus(progress.message || data.state || "Waiting...");
+          setStatus(progress.message || data.status || data.state || "Waiting...");
         })
         .catch((err) => {
           pollErrorCount += 1;

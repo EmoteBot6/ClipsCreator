@@ -149,7 +149,7 @@ def _task_status_payload(task):
     info = task.info
 
     if state == "PENDING":
-        return {"state": "PENDING", "status": "Waiting to start..."}
+        return {"state": "PENDING", "status": "Queued for a worker. If this persists, check the worker in automatic clip diagnostics."}
     if state == "PROGRESS":
         return {"state": "PROGRESS", "progress": _task_progress_payload(info)}
     if state == "RENDERING":
@@ -226,6 +226,8 @@ def _auto_synapse_status_payload():
     status["active_task"] = {"id": active_task_id, **task_payload}
     if task_payload.get("state"):
         status["active_task_state"] = task_payload["state"]
+    if task_payload.get("state") == "PENDING" and status.get("queue_message"):
+        status["active_task"]["status"] = status["queue_message"]
     return status
 
 
@@ -314,7 +316,7 @@ def auto_synapse_diagnostics():
             "celery": {
                 "ok": bool(celery_workers),
                 "workers": celery_workers,
-                "error": celery_error,
+                "error": celery_error or ("No Celery workers responded. Start or restart the celery service." if not celery_workers else ""),
             },
             "yt_dlp": ytdlp,
         }

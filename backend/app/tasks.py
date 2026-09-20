@@ -1,27 +1,18 @@
-from celery import Celery
-from celery.result import AsyncResult
-from app.scripts.video_editor import createClip, get_list
-import os
-import logging
 import json
+import logging
+import os
 import time
-from app.state import is_aborted
+
+from celery.result import AsyncResult
+
+from app.workers import celery
+from app.scripts.video_editor import createClip, get_list
+from app.state import is_aborted, refresh_owned_lock, release_owned_lock
 from app.state import r as redis_client
 from app.scripts.video_import import resolve_source_video_path
 from app.scripts.ai_pipeline import run_ai_pipeline_for_clip
 from app.scripts.single_clip_pipeline import run_centered_mobile_pipeline, run_single_clip_pipeline
 from app.scripts.sitcom_pipeline import run_sitcom_pipeline
-
-
-
-
-celery = Celery('tasks')
-
-celery.conf.update(
-    broker_url='redis://redis:6379/0',
-    result_backend='redis://redis:6379/0'
-)
-
 logging.basicConfig(
     level=getattr(logging, os.getenv("LEAGUECLIPS_LOG_LEVEL", "INFO").upper(), logging.INFO),
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -72,8 +63,7 @@ def _acquire_multiclip_lock(task):
                 owner_state = ""
             if owner_state in {"SUCCESS", "FAILURE", "REVOKED"}:
                 try:
-                    if redis_client.get(MULTICLIP_SPLIT_LOCK_KEY) == owner:
-                        redis_client.delete(MULTICLIP_SPLIT_LOCK_KEY)
+                    if release_owned_lock(redis_client, MULTICLIP_SPLIT_LOCK_KEY, owner):
                         continue
                 except Exception:
                     pass
@@ -90,18 +80,14 @@ def _acquire_multiclip_lock(task):
 
 def _refresh_multiclip_lock(task_id):
     try:
-        owner = redis_client.get(MULTICLIP_SPLIT_LOCK_KEY)
-        if owner == task_id:
-            redis_client.expire(MULTICLIP_SPLIT_LOCK_KEY, MULTICLIP_SPLIT_LOCK_TTL_SECONDS)
+        refresh_owned_lock(redis_client, MULTICLIP_SPLIT_LOCK_KEY, task_id, MULTICLIP_SPLIT_LOCK_TTL_SECONDS)
     except Exception:
         return
 
 
 def _release_multiclip_lock(task_id):
     try:
-        owner = redis_client.get(MULTICLIP_SPLIT_LOCK_KEY)
-        if owner == task_id:
-            redis_client.delete(MULTICLIP_SPLIT_LOCK_KEY)
+        release_owned_lock(redis_client, MULTICLIP_SPLIT_LOCK_KEY, task_id)
     except Exception:
         return
 
@@ -140,18 +126,14 @@ def _acquire_sitcom_lock(task):
 
 def _refresh_sitcom_lock(task_id):
     try:
-        owner = redis_client.get(SITCOM_EDIT_LOCK_KEY)
-        if owner == task_id:
-            redis_client.expire(SITCOM_EDIT_LOCK_KEY, SITCOM_EDIT_LOCK_TTL_SECONDS)
+        refresh_owned_lock(redis_client, SITCOM_EDIT_LOCK_KEY, task_id, SITCOM_EDIT_LOCK_TTL_SECONDS)
     except Exception:
         return
 
 
 def _release_sitcom_lock(task_id):
     try:
-        owner = redis_client.get(SITCOM_EDIT_LOCK_KEY)
-        if owner == task_id:
-            redis_client.delete(SITCOM_EDIT_LOCK_KEY)
+        release_owned_lock(redis_client, SITCOM_EDIT_LOCK_KEY, task_id)
     except Exception:
         return
 
@@ -176,6 +158,10 @@ def process_videos_task(self, source_url="", source_filename="", auto_subtitles=
     source_name = source_filename
     source_video_path = ""
     try:
+        self.update_state(
+            state="SPLIT_PREP",
+            meta={"message": "Reading source video and finding clip boundaries...", "source_filename": source_name},
+        )
         source_name, source_video_path = resolve_source_video_path(source_filename)
         video_list = get_list(source_url or "", source_filename=source_name)
         total = len(video_list)
