@@ -1,8 +1,6 @@
 services:
   backend:
-    # Defaults to the current directory when run from the repo.
-    # For CasaOS/server installs, point LEAGUECLIPS_SOURCE_DIR at a local clone.
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/backend
+    image: ghcr.io/emotebot6/clipscreator-backend:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_backend
     restart: unless-stopped
     user: "1000:1000"
@@ -67,7 +65,7 @@ services:
         max-file: "3"
 
   celery:
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/backend
+    image: ghcr.io/emotebot6/clipscreator-backend:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_celery_worker
     restart: unless-stopped
     user: "1000:1000"
@@ -104,7 +102,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   frontend:
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/frontend
+    image: ghcr.io/emotebot6/clipscreator-frontend:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_frontend
     restart: unless-stopped
     user: "1000:1000"
@@ -124,7 +122,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   frontend_sitcom:
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/frontend_sitcom
+    image: ghcr.io/emotebot6/clipscreator-frontend-sitcom:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_frontend_sitcom
     restart: unless-stopped
     user: "1000:1000"
@@ -141,7 +139,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   frontend_tshirts:
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/frontend_tshirts
+    image: ghcr.io/emotebot6/clipscreator-frontend-tshirts:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_frontend_tshirts
     restart: unless-stopped
     user: "1000:1000"
@@ -185,7 +183,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   image_generator:
-    build: ${LEAGUECLIPS_SOURCE_DIR:-.}/image_generator
+    image: ghcr.io/emotebot6/clipscreator-image-generator:${CLIPS_IMAGE_TAG:-latest}
     container_name: clips_image_generator
     restart: unless-stopped
     user: "1000:1000"

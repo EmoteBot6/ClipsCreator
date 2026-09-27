@@ -44,12 +44,31 @@ Then open:
 
 Runtime data is written under `./data/` by default. That directory is intentionally ignored by Git.
 
+## CasaOS installation and updates
+
+`compose.casa.yml` uses the images published by GitHub Actions. Import it into CasaOS for a new installation. For an existing app, update that app's configuration once to add any missing services and apply environment/mount changes, preserving your server's port and data-path overrides. The server does not need source code or a local image build. Runtime data defaults to `/DATA/AppData/ClipsCreator`; override it with `CLIPSCREATOR_APPDATA_DIR`.
+
+After the GitHub Actions run on `main` finishes successfully, run this on the CasaOS server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EmoteBot6/ClipsCreator/main/scripts/update-casa.py -o /tmp/update-clips.py && sudo python3 /tmp/update-clips.py
+```
+
+Use the same command for subsequent image updates. If you already have the repository on the server, `sudo python3 scripts/update-casa.py` also works.
+
+The updater finds the existing app through `clips_backend` and reuses its Compose project name, configuration files, working directory, and recorded environment files. It writes a small `compose.clipscreator-images.json` overlay alongside the installed Compose file to select the published app images, including for older configurations that still contain `build:`. Keep this overlay: Docker records its path for subsequent updates. Your original Compose files are not rewritten.
+
+All app images are pulled before containers are recreated. Redis and Ollama images are not upgraded by this command. A failed image pull stops the update before containers are changed. Missing optional services are reported; adding services or applying new Compose settings still requires updating the existing CasaOS app's configuration once. Source-code bind mounts must be removed from production app services because they hide the code in the downloaded image.
+
+The updater needs Python 3.8+ and Docker Compose v2. Use `--dry-run` to inspect the planned update, `--container NAME` for a renamed backend container, or `--tag sha-1234567` to select a published commit for that update. The default tag comes from `CLIPS_IMAGE_TAG` in the deployment's Compose environment or `.env`, falling back to `latest`. To stay on a particular version, set `CLIPS_IMAGE_TAG` there. If GHCR packages are private, authenticate the Docker user running the updater with `docker login ghcr.io` first.
+
 ## Configuration
 
 Most settings are provided through environment variables in `docker-compose.yml`.
 
 Common values to change:
 
+- `CLIPS_IMAGE_TAG`: published image tag for CasaOS, default `latest`. A release tag or `sha-<commit>` selects that version across all app services.
 - `LEAGUECLIPS_OLLAMA_MODEL`: Ollama model used for local analysis.
 - `LEAGUECLIPS_AI_WHISPER_MODEL`: Whisper model size.
 - `LEAGUECLIPS_AI_DEVICE`: `cpu` or a supported accelerator setup.
@@ -84,8 +103,6 @@ docker exec clips_ollama ollama pull qwen2.5:7b-instruct
 
 The local image generator downloads its model weights on first use and stores them in the `image-generator` data volume. The default SDXL model is several gigabytes. CPU generation can be very slow; a GPU-capable Docker host is strongly recommended for high-quality hourly generation.
 
-For server/CasaOS-style installs, `compose.casa.yml` defaults runtime data to `/DATA/AppData/ClipsCreator/...` and supports `LEAGUECLIPS_SOURCE_DIR` for pointing builds at a local clone. You can override the data root with `CLIPSCREATOR_APPDATA_DIR`.
-
 ## Automatic clip processing
 
 The backend and Celery worker share `REDIS_URL` (default `redis://redis:6379/0`). Start both services: the backend alone cannot render clips. Worker concurrency defaults to `2` through `LEAGUECLIPS_WORKER_CONCURRENCY` to limit simultaneous video/AI workloads.
@@ -101,13 +118,13 @@ docker compose ps
 docker compose logs --tail=100 celery backend
 ```
 
-After updating the source, apply the changes with:
+For local development, apply source changes with:
 
 ```powershell
 docker compose up -d --build
 ```
 
-For CasaOS, use `docker compose -f compose.casa.yml up -d --build` instead. Existing model files remain in the same host data directory; the Ollama container now accesses that directory through `/data/.ollama` so its non-root user can reach it.
+For CasaOS, use the updater described above. Existing model files remain in the same host data directory; the Ollama container accesses that directory through `/data/.ollama` so its non-root user can reach it.
 
 ## Tests
 
@@ -116,7 +133,7 @@ python -m pip install -r requirements-test.txt
 python -m pytest -q tests
 ```
 
-The regression suite covers generation settings, restart recovery, exported image dimensions, frontend scripts, task preparation, missing workers, and queued-job recovery. External AI providers, video rendering, and Redis/worker inspection are mocked; live Docker/model validation is separate. JavaScript syntax checks use Node when available. CI runs the tests and validates both Compose configurations before building service images.
+The regression suite covers generation settings, restart recovery, exported image dimensions, frontend scripts, task preparation, missing workers, queued-job recovery, and the CasaOS update workflow. External AI providers, video rendering, Redis/worker inspection, and deployment commands are mocked; live Docker/model validation is separate. Compose overlay merging is checked with the real Docker Compose CLI when available, without starting containers. JavaScript syntax checks use Node when available. CI runs the tests and validates both Compose configurations before building service images.
 
 ## Public Repo Hygiene
 
